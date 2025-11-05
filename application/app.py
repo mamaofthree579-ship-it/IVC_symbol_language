@@ -8,8 +8,6 @@ import cv2
 from PIL import Image
 import pytesseract
 import os
-
-# Import the IVC translator module
 from ivc_translator import ivc_translate
 
 # ====================================
