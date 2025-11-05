@@ -9,25 +9,26 @@ from PIL import Image
 import pytesseract
 import os
 
+# Import the IVC translator module
+from ivc_translator import ivc_translate
+
 # ====================================
-# ✅ STREAMLIT PAGE CONFIG (MOBILE FRIENDLY)
+# STREAMLIT PAGE CONFIG (MOBILE FRIENDLY)
 # ====================================
 st.set_page_config(
     page_title="IVC Analyzer",
     page_icon="🌀",
-    layout="centered",  # good for phones
+    layout="centered",  # phone-optimized
     initial_sidebar_state="collapsed"
 )
 
-# Add simple mobile-friendly CSS
+# Add mobile-friendly CSS
 st.markdown("""
 <style>
 button, .stTextInput, .stSelectbox, .stDownloadButton {
     font-size: 18px !important;
 }
-.stImage {
-    text-align: center;
-}
+.stImage { text-align: center; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -38,7 +39,7 @@ st.title("🌀 Integrated Visual Coding (IVC) Analyzer")
 st.caption("Decode ancient symbols and scripts through energetic, geometric, and functional mapping — optimized for mobile.")
 
 # ====================================
-# UPLOAD SECTION (MAIN SCREEN)
+# UPLOAD SECTION
 # ====================================
 st.markdown("### 📤 Upload Artifact")
 uploaded_file = st.file_uploader("Upload an image of an ancient artifact", type=["jpg", "jpeg", "png"])
@@ -48,12 +49,11 @@ analysis_type = st.selectbox(
     ["Single Symbol", "Full Script", "Cultural Context Analysis"]
 )
 
-# Initialize session state
 if "analysis_done" not in st.session_state:
     st.session_state["analysis_done"] = False
 
 # ====================================
-# UPLOAD HANDLING
+# FILE UPLOAD AND ANALYSIS
 # ====================================
 if uploaded_file:
     st.success("✅ File uploaded successfully!")
@@ -71,13 +71,11 @@ if uploaded_file:
             image = np.array(Image.open(uploaded_file).convert("RGB"))
             gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
 
-            # --- Edge detection for symbolic mapping ---
+            # --- Edge detection ---
             edges = cv2.Canny(gray, 100, 200)
 
             # --- OCR extraction ---
             try:
-                # Optional: set path manually if needed
-                # pytesseract.pytesseract.tesseract_cmd = r"/usr/bin/tesseract"
                 ocr_text = pytesseract.image_to_string(gray)
             except pytesseract.TesseractNotFoundError:
                 ocr_text = "(⚠️ Tesseract not found on this device. Please install it to enable OCR.)"
@@ -85,8 +83,25 @@ if uploaded_file:
             if not ocr_text.strip():
                 ocr_text = "(No readable glyphs or text detected.)"
 
+            # Dummy symbolic detections (you can later connect to a detector)
+            detected_shapes = ["spiral", "arrow"]
+            detected_patterns = ["spiral-arrow", "triad"]
+            detected_freqs = [12.3, 14.8, 13.2]
+
+            symbol_data = {
+                "shapes": detected_shapes,
+                "patterns": detected_patterns,
+                "frequencies": detected_freqs
+            }
+
+            # --- Run IVC translation ---
+            translation_output = ivc_translate(symbol_data, ocr_text)
+
+            # Save to session
             st.session_state["edges"] = edges
             st.session_state["ocr_text"] = ocr_text
+            st.session_state["symbol_data"] = symbol_data
+            st.session_state["translation_output"] = translation_output
             st.session_state["analysis_done"] = True
 
         st.success("✅ Analysis complete! See results below.")
@@ -94,17 +109,18 @@ else:
     st.info("📸 Upload an image to begin your IVC analysis.")
 
 # ====================================
-# ANALYSIS RESULTS
+# RESULTS DISPLAY
 # ====================================
 if st.session_state["analysis_done"]:
     edges = st.session_state.get("edges")
     ocr_text = st.session_state.get("ocr_text", "")
+    translation_output = st.session_state.get("translation_output", "")
 
-    # TABS FOR MOBILE NAVIGATION
-    tab1, tab2, tab3, tab4 = st.tabs(["Energy Map", "Functional Matrix", "Resonance", "Report"])
+    # TABS FOR NAVIGATION
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["Energy Map", "Functional Matrix", "Resonance", "Translation", "Report"])
 
     # ---------------------------
-    # TAB 1: Energy Map
+    # TAB 1: ENERGY MAP
     # ---------------------------
     with tab1:
         st.markdown("### 🌀 Symbolic Energy Map")
@@ -117,7 +133,7 @@ if st.session_state["analysis_done"]:
         st.text(ocr_text.strip())
 
     # ---------------------------
-    # TAB 2: Functional Matrix
+    # TAB 2: FUNCTIONAL MATRIX
     # ---------------------------
     with tab2:
         st.markdown("### ⚙️ Functional Assignment Matrix")
@@ -147,7 +163,7 @@ if st.session_state["analysis_done"]:
             st.pyplot(fig2, use_container_width=True)
 
     # ---------------------------
-    # TAB 3: Resonance Simulation
+    # TAB 3: RESONANCE SIMULATION
     # ---------------------------
     with tab3:
         st.markdown("### 🌐 Frequency & Resonance Spectrum")
@@ -159,26 +175,17 @@ if st.session_state["analysis_done"]:
         ax3.set_ylabel("Resonance Intensity")
         st.pyplot(fig3, use_container_width=True)
 
-        st.markdown("### 💭 Interpretation (Placeholder)")
-        st.info
-        from ivc_translator import ivc_translate
-
-# Example stub for detected shapes/patterns
-symbol_data = {
-    "shapes": ["spiral", "arrow"],
-    "patterns": ["spiral-arrow", "triad"],
-    "frequencies": [12.3, 14.8, 13.2]
-}
-
-translation_output = ivc_translate(symbol_data, ocr_text)
-st.markdown("### 🧬 IVC Translation Output")
-st.write(translation_output)
-        
-
     # ---------------------------
-    # TAB 4: Report Export
+    # TAB 4: TRANSLATION (NEW)
     # ---------------------------
     with tab4:
+        st.markdown("### 🧬 IVC Translation Output")
+        st.markdown(translation_output)
+
+    # ---------------------------
+    # TAB 5: REPORT EXPORT
+    # ---------------------------
+    with tab5:
         st.markdown("### 📤 Export Analysis Report")
         export_choice = st.radio("Select Export Format", ["Markdown (.md)", "CSV"])
 
@@ -189,6 +196,9 @@ st.write(translation_output)
 - Energy Flow Mapping Complete
 - OCR Extracted Text:
 {ocr_text}
+
+**IVC Translation:**
+{translation_output}
 
 - Functional Roles: Flow, Stability, Structure
 - Symbolic Relationships: Triadic linkage detected
