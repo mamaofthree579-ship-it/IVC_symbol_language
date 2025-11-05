@@ -6,4 +6,3 @@ numpy
 opencv-python-headless
 pillow
 pytesseract
-pytesseract-OCR-iOS
