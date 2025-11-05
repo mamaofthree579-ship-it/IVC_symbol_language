@@ -3,3 +3,5 @@ matplotlib
 networkx 
 pandas 
 numpy
+opencv-python-headless
+pillow
