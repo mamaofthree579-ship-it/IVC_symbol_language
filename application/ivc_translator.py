@@ -1,13 +1,3 @@
-"""
-IVC Translator  (Phase 1: rule-based prototype)
-------------------------------------------------
-Maps detected symbol features and OCR text to preliminary
-IVC energetic and functional interpretations.
-
-You can expand the dictionaries and functions below to
-represent the full IVC algorithm.
-"""
-
 import re
 from typing import Dict, List
 
