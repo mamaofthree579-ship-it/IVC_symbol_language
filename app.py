@@ -5,6 +5,19 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import io
 import cv2
+import pytesseract
+
+if uploaded_file.type.startswith("image/"):
+    # convert to gray image
+    gray = cv2.cvtColor(np.array(Image.open(uploaded_file).convert("RGB")), cv2.COLOR_RGB2GRAY)
+
+    # --- OCR ---
+    ocr_text = pytesseract.image_to_string(gray)
+    st.subheader("🧾 Detected Text / Glyphs (OCR)")
+    if ocr_text.strip():
+        st.text(ocr_text.strip())
+    else:
+        st.info("No clear text detected — this image may be primarily symbolic.")
 from PIL import Image
 
 # ==============================
