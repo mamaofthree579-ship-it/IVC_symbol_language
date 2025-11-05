@@ -5,20 +5,9 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import io
 import cv2
-import pytesseract
-
-if uploaded_file.type.startswith("image/"):
-    # convert to gray image
-    gray = cv2.cvtColor(np.array(Image.open(uploaded_file).convert("RGB")), cv2.COLOR_RGB2GRAY)
-
-    # --- OCR ---
-    ocr_text = pytesseract.image_to_string(gray)
-    st.subheader("🧾 Detected Text / Glyphs (OCR)")
-    if ocr_text.strip():
-        st.text(ocr_text.strip())
-    else:
-        st.info("No clear text detected — this image may be primarily symbolic.")
 from PIL import Image
+import pytesseract
+import os
 
 # ==============================
 # APP CONFIGURATION
@@ -59,18 +48,21 @@ if uploaded_file:
     if uploaded_file.type.startswith("image/"):
         st.image(uploaded_file, caption="Uploaded Artifact", use_container_width=True)
 
-        # Run button
         if st.sidebar.button("Run IVC Analysis"):
             with st.spinner("Running algorithmic analysis..."):
-                # Convert image for OpenCV
                 image = np.array(Image.open(uploaded_file).convert("RGB"))
                 gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
 
-                # Edge detection to simulate "symbol extraction"
+                # --- Edge detection to simulate symbolic pathways ---
                 edges = cv2.Canny(gray, 100, 200)
 
-                # Store processed data
+                # --- OCR text extraction ---
+                ocr_text = pytesseract.image_to_string(gray)
+                if not ocr_text.strip():
+                    ocr_text = "(No readable glyphs or text detected.)"
+
                 st.session_state["edges"] = edges
+                st.session_state["ocr_text"] = ocr_text
                 st.session_state["analysis_done"] = True
 
             st.success("✅ Analysis complete! See results below.")
@@ -81,20 +73,24 @@ else:
 # STEP 2: SHOW ANALYSIS RESULTS
 # ==============================
 if st.session_state["analysis_done"]:
-    st.subheader("2️⃣ Symbolic Energy Map (Edge Detection)")
     edges = st.session_state.get("edges")
+    ocr_text = st.session_state.get("ocr_text", "")
 
+    st.subheader("2️⃣ Symbolic Energy Map (Edge Detection)")
     fig, ax = plt.subplots()
     ax.imshow(edges, cmap="inferno")
     ax.set_title("Detected Symbolic Pathways (Energy Flow Map)")
     ax.axis("off")
     st.pyplot(fig)
 
-    # ======================================
-    # 3️⃣ FUNCTIONAL MATRIX (Placeholder Example)
-    # ======================================
-    st.subheader("3️⃣ Functional Assignment Matrix")
+    # OCR output
+    st.subheader("3️⃣ OCR Detected Text / Glyphs")
+    st.text(ocr_text.strip())
 
+    # ======================================
+    # 4️⃣ FUNCTIONAL MATRIX
+    # ======================================
+    st.subheader("4️⃣ Functional Assignment Matrix")
     matrix_data = pd.DataFrame({
         "Symbol": ["Detected Form A", "Detected Form B", "Detected Form C"],
         "Energetic Role": ["Flow", "Stability", "Structure"],
@@ -103,10 +99,9 @@ if st.session_state["analysis_done"]:
     st.dataframe(matrix_data, use_container_width=True)
 
     # ======================================
-    # 4️⃣ SYMBOL RELATIONAL TREE
+    # 5️⃣ SYMBOL RELATIONAL TREE
     # ======================================
-    st.subheader("4️⃣ Symbol Relational Tree — Network Mapping")
-
+    st.subheader("5️⃣ Symbol Relational Tree — Network Mapping")
     G = nx.Graph()
     G.add_edges_from([
         ("Form A", "Form B"),
@@ -118,10 +113,9 @@ if st.session_state["analysis_done"]:
     st.pyplot(fig2)
 
     # ======================================
-    # 5️⃣ FREQUENCY / RESONANCE SIMULATION
+    # 6️⃣ FREQUENCY / RESONANCE SIMULATION
     # ======================================
-    st.subheader("5️⃣ Frequency & Resonance Simulation")
-
+    st.subheader("6️⃣ Frequency & Resonance Simulation")
     freqs = np.linspace(0, 100, 200)
     resonance = np.sin(freqs / 8) ** 2
     fig3, ax3 = plt.subplots()
@@ -132,27 +126,37 @@ if st.session_state["analysis_done"]:
     st.pyplot(fig3)
 
     # ======================================
-    # 6️⃣ AI TRANSLATION SUMMARY (Placeholder)
+    # 7️⃣ INTERPRETATION STUB
     # ======================================
-    st.subheader("6️⃣ IVC Translation Summary")
+    st.subheader("7️⃣ Symbolic Interpretation (Placeholder)")
     st.markdown("""
-    **Interpretation:**  
-    > The extracted patterns exhibit a high degree of geometric recursion, suggesting intentional symbolic encoding of energy flow and stabilization.  
-    > Localized nodal formations correspond to probable field modulation or consciousness alignment systems.
+    This is where you can connect your own model for automatic interpretation.
+
+    If you have an API endpoint or local model, call it here with the OCR output
+    and image statistics to generate a text interpretation.
+    """)
+    st.code("""
+    # Example (pseudo-code):
+    # from ivc_api import interpret_symbols
+    # interpretation = interpret_symbols(ocr_text)
+    # st.write(interpretation)
     """)
 
     # ======================================
-    # 7️⃣ EXPORT REPORT
+    # 8️⃣ EXPORT REPORT
     # ======================================
     st.subheader("📤 Export Results")
 
     export_choice = st.radio("Select Export Format", ["Markdown (.md)", "CSV"])
 
     if st.button("Generate Report"):
-        report = """# IVC Analysis Report
+        report = f"""# IVC Analysis Report
 
-**Summary:**
-- Energy Flow: Detected via edge mapping
+**Summary**
+- Energy Flow: Edge-based mapping complete
+- OCR Extracted Text:
+{ocr_text}
+
 - Functional Roles: Flow, Stability, Structure
 - Symbolic Relationships: Triadic linkage detected
 """
@@ -172,6 +176,5 @@ if st.session_state["analysis_done"]:
             file_name=filename,
             mime=mime
         )
-
 else:
     st.info("Upload an artifact and click **Run IVC Analysis** to view results.")
