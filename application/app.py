@@ -160,10 +160,20 @@ if st.session_state["analysis_done"]:
         st.pyplot(fig3, use_container_width=True)
 
         st.markdown("### 💭 Interpretation (Placeholder)")
-        st.info("""
-        This is where your model or API will interpret the extracted text and symbols.
-        Later, you can add your own model call here to translate or decode ancient patterns.
-        """)
+        st.info
+        from ivc_translator import ivc_translate
+
+# Example stub for detected shapes/patterns
+symbol_data = {
+    "shapes": ["spiral", "arrow"],
+    "patterns": ["spiral-arrow", "triad"],
+    "frequencies": [12.3, 14.8, 13.2]
+}
+
+translation_output = ivc_translate(symbol_data, ocr_text)
+st.markdown("### 🧬 IVC Translation Output")
+st.write(translation_output)
+        
 
     # ---------------------------
     # TAB 4: Report Export
