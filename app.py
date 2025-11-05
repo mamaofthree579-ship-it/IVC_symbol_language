@@ -9,20 +9,41 @@ from PIL import Image
 import pytesseract
 import os
 
-# ==============================
-# APP CONFIGURATION
-# ==============================
-st.set_page_config(page_title="IVC Analyzer", page_icon="🌀", layout="wide")
+# ====================================
+# ✅ STREAMLIT PAGE CONFIG (MOBILE FRIENDLY)
+# ====================================
+st.set_page_config(
+    page_title="IVC Analyzer",
+    page_icon="🌀",
+    layout="centered",  # good for phones
+    initial_sidebar_state="collapsed"
+)
+
+# Add simple mobile-friendly CSS
+st.markdown("""
+<style>
+button, .stTextInput, .stSelectbox, .stDownloadButton {
+    font-size: 18px !important;
+}
+.stImage {
+    text-align: center;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ====================================
+# APP HEADER
+# ====================================
 st.title("🌀 Integrated Visual Coding (IVC) Analyzer")
-st.caption("Decode ancient symbols and scripts through energetic, geometric, and functional mapping.")
+st.caption("Decode ancient symbols and scripts through energetic, geometric, and functional mapping — optimized for mobile.")
 
-# ==============================
-# SIDEBAR: INPUT
-# ==============================
-st.sidebar.header("Upload Ancient Artifact")
-uploaded_file = st.sidebar.file_uploader("Upload Image or Document", type=["jpg", "jpeg", "png", "pdf", "txt", "docx"])
+# ====================================
+# UPLOAD SECTION (MAIN SCREEN)
+# ====================================
+st.markdown("### 📤 Upload Artifact")
+uploaded_file = st.file_uploader("Upload an image of an ancient artifact", type=["jpg", "jpeg", "png"])
 
-analysis_type = st.sidebar.selectbox(
+analysis_type = st.selectbox(
     "Select Analysis Type",
     ["Single Symbol", "Full Script", "Cultural Context Analysis"]
 )
@@ -31,13 +52,11 @@ analysis_type = st.sidebar.selectbox(
 if "analysis_done" not in st.session_state:
     st.session_state["analysis_done"] = False
 
-# ==============================
-# STEP 1: SHOW UPLOADED FILE
-# ==============================
-st.subheader("1️⃣ Input Overview")
-
+# ====================================
+# UPLOAD HANDLING
+# ====================================
 if uploaded_file:
-    st.sidebar.success("✅ File uploaded successfully!")
+    st.success("✅ File uploaded successfully!")
     file_details = {
         "Filename": uploaded_file.name,
         "File Type": uploaded_file.type,
@@ -45,115 +64,119 @@ if uploaded_file:
     }
     st.json(file_details)
 
-    if uploaded_file.type.startswith("image/"):
-        st.image(uploaded_file, caption="Uploaded Artifact", use_container_width=True)
+    st.image(uploaded_file, caption="Uploaded Artifact", use_container_width=True)
 
-        if st.sidebar.button("Run IVC Analysis"):
-            with st.spinner("Running algorithmic analysis..."):
-                image = np.array(Image.open(uploaded_file).convert("RGB"))
-                gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+    if st.button("▶️ Run IVC Analysis", use_container_width=True):
+        with st.spinner("Running algorithmic analysis..."):
+            image = np.array(Image.open(uploaded_file).convert("RGB"))
+            gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
 
-                # --- Edge detection to simulate symbolic pathways ---
-                edges = cv2.Canny(gray, 100, 200)
+            # --- Edge detection for symbolic mapping ---
+            edges = cv2.Canny(gray, 100, 200)
 
-                # --- OCR text extraction ---
+            # --- OCR extraction ---
+            try:
+                # Optional: set path manually if needed
+                # pytesseract.pytesseract.tesseract_cmd = r"/usr/bin/tesseract"
                 ocr_text = pytesseract.image_to_string(gray)
-                if not ocr_text.strip():
-                    ocr_text = "(No readable glyphs or text detected.)"
+            except pytesseract.TesseractNotFoundError:
+                ocr_text = "(⚠️ Tesseract not found on this device. Please install it to enable OCR.)"
 
-                st.session_state["edges"] = edges
-                st.session_state["ocr_text"] = ocr_text
-                st.session_state["analysis_done"] = True
+            if not ocr_text.strip():
+                ocr_text = "(No readable glyphs or text detected.)"
 
-            st.success("✅ Analysis complete! See results below.")
+            st.session_state["edges"] = edges
+            st.session_state["ocr_text"] = ocr_text
+            st.session_state["analysis_done"] = True
+
+        st.success("✅ Analysis complete! See results below.")
 else:
-    st.info("⬅️ Please upload an image to begin analysis.")
+    st.info("📸 Upload an image to begin your IVC analysis.")
 
-# ==============================
-# STEP 2: SHOW ANALYSIS RESULTS
-# ==============================
+# ====================================
+# ANALYSIS RESULTS
+# ====================================
 if st.session_state["analysis_done"]:
     edges = st.session_state.get("edges")
     ocr_text = st.session_state.get("ocr_text", "")
 
-    st.subheader("2️⃣ Symbolic Energy Map (Edge Detection)")
-    fig, ax = plt.subplots()
-    ax.imshow(edges, cmap="inferno")
-    ax.set_title("Detected Symbolic Pathways (Energy Flow Map)")
-    ax.axis("off")
-    st.pyplot(fig)
+    # TABS FOR MOBILE NAVIGATION
+    tab1, tab2, tab3, tab4 = st.tabs(["Energy Map", "Functional Matrix", "Resonance", "Report"])
 
-    # OCR output
-    st.subheader("3️⃣ OCR Detected Text / Glyphs")
-    st.text(ocr_text.strip())
+    # ---------------------------
+    # TAB 1: Energy Map
+    # ---------------------------
+    with tab1:
+        st.markdown("### 🌀 Symbolic Energy Map")
+        fig, ax = plt.subplots()
+        ax.imshow(edges, cmap="inferno")
+        ax.axis("off")
+        st.pyplot(fig, use_container_width=True)
 
-    # ======================================
-    # 4️⃣ FUNCTIONAL MATRIX
-    # ======================================
-    st.subheader("4️⃣ Functional Assignment Matrix")
-    matrix_data = pd.DataFrame({
-        "Symbol": ["Detected Form A", "Detected Form B", "Detected Form C"],
-        "Energetic Role": ["Flow", "Stability", "Structure"],
-        "Functional Role": ["Force Channel", "Field Anchor", "Material Node"]
-    })
-    st.dataframe(matrix_data, use_container_width=True)
+        st.markdown("### 🔠 OCR Detected Text")
+        st.text(ocr_text.strip())
 
-    # ======================================
-    # 5️⃣ SYMBOL RELATIONAL TREE
-    # ======================================
-    st.subheader("5️⃣ Symbol Relational Tree — Network Mapping")
-    G = nx.Graph()
-    G.add_edges_from([
-        ("Form A", "Form B"),
-        ("Form B", "Form C"),
-        ("Form C", "Form A")
-    ])
-    fig2, ax2 = plt.subplots()
-    nx.draw(G, with_labels=True, node_color="lightblue", node_size=2500, ax=ax2)
-    st.pyplot(fig2)
+    # ---------------------------
+    # TAB 2: Functional Matrix
+    # ---------------------------
+    with tab2:
+        st.markdown("### ⚙️ Functional Assignment Matrix")
 
-    # ======================================
-    # 6️⃣ FREQUENCY / RESONANCE SIMULATION
-    # ======================================
-    st.subheader("6️⃣ Frequency & Resonance Simulation")
-    freqs = np.linspace(0, 100, 200)
-    resonance = np.sin(freqs / 8) ** 2
-    fig3, ax3 = plt.subplots()
-    ax3.plot(freqs, resonance)
-    ax3.set_title("Symbolic Resonance Spectrum")
-    ax3.set_xlabel("Frequency (arbitrary units)")
-    ax3.set_ylabel("Resonance Intensity")
-    st.pyplot(fig3)
+        matrix_data = pd.DataFrame({
+            "Symbol": ["Detected Form A", "Detected Form B", "Detected Form C"],
+            "Energetic Role": ["Flow", "Stability", "Structure"],
+            "Functional Role": ["Force Channel", "Field Anchor", "Material Node"]
+        })
 
-    # ======================================
-    # 7️⃣ INTERPRETATION STUB
-    # ======================================
-    st.subheader("7️⃣ Symbolic Interpretation (Placeholder)")
-    st.markdown("""
-    This is where you can connect your own model for automatic interpretation.
+        search = st.text_input("🔍 Search symbols")
+        if search:
+            filtered = matrix_data[matrix_data["Symbol"].str.contains(search, case=False)]
+            st.dataframe(filtered, use_container_width=True)
+        else:
+            st.dataframe(matrix_data, use_container_width=True)
 
-    If you have an API endpoint or local model, call it here with the OCR output
-    and image statistics to generate a text interpretation.
-    """)
-    st.code("""
-    # Example (pseudo-code):
-    # from ivc_api import interpret_symbols
-    # interpretation = interpret_symbols(ocr_text)
-    # st.write(interpretation)
-    """)
+        with st.expander("🕸️ Show Symbolic Relational Tree"):
+            G = nx.Graph()
+            G.add_edges_from([
+                ("Form A", "Form B"),
+                ("Form B", "Form C"),
+                ("Form C", "Form A")
+            ])
+            fig2, ax2 = plt.subplots()
+            nx.draw(G, with_labels=True, node_color="lightblue", node_size=2500, ax=ax2)
+            st.pyplot(fig2, use_container_width=True)
 
-    # ======================================
-    # 8️⃣ EXPORT REPORT
-    # ======================================
-    st.subheader("📤 Export Results")
+    # ---------------------------
+    # TAB 3: Resonance Simulation
+    # ---------------------------
+    with tab3:
+        st.markdown("### 🌐 Frequency & Resonance Spectrum")
+        freqs = np.linspace(0, 100, 200)
+        resonance = np.sin(freqs / 8) ** 2
+        fig3, ax3 = plt.subplots()
+        ax3.plot(freqs, resonance)
+        ax3.set_xlabel("Frequency (a.u.)")
+        ax3.set_ylabel("Resonance Intensity")
+        st.pyplot(fig3, use_container_width=True)
 
-    export_choice = st.radio("Select Export Format", ["Markdown (.md)", "CSV"])
+        st.markdown("### 💭 Interpretation (Placeholder)")
+        st.info("""
+        This is where your model or API will interpret the extracted text and symbols.
+        Later, you can add your own model call here to translate or decode ancient patterns.
+        """)
 
-    if st.button("Generate Report"):
-        report = f"""# IVC Analysis Report
+    # ---------------------------
+    # TAB 4: Report Export
+    # ---------------------------
+    with tab4:
+        st.markdown("### 📤 Export Analysis Report")
+        export_choice = st.radio("Select Export Format", ["Markdown (.md)", "CSV"])
+
+        if st.button("Generate Report", use_container_width=True):
+            report = f"""# IVC Analysis Report
 
 **Summary**
-- Energy Flow: Edge-based mapping complete
+- Energy Flow Mapping Complete
 - OCR Extracted Text:
 {ocr_text}
 
@@ -161,20 +184,21 @@ if st.session_state["analysis_done"]:
 - Symbolic Relationships: Triadic linkage detected
 """
 
-        if export_choice == "Markdown (.md)":
-            mime = "text/markdown"
-            filename = "IVC_Report.md"
-        else:
-            mime = "text/csv"
-            filename = "IVC_Report.csv"
-            report = "Symbol,Energetic Role,Functional Role\nForm A,Flow,Force Channel\nForm B,Stability,Field Anchor\nForm C,Structure,Material Node\n"
+            if export_choice == "Markdown (.md)":
+                mime = "text/markdown"
+                filename = "IVC_Report.md"
+            else:
+                mime = "text/csv"
+                filename = "IVC_Report.csv"
+                report = "Symbol,Energetic Role,Functional Role\nForm A,Flow,Force Channel\nForm B,Stability,Field Anchor\nForm C,Structure,Material Node\n"
 
-        b = io.BytesIO(report.encode("utf-8"))
-        st.download_button(
-            label=f"⬇️ Download {filename}",
-            data=b,
-            file_name=filename,
-            mime=mime
-        )
+            b = io.BytesIO(report.encode("utf-8"))
+            st.download_button(
+                label=f"⬇️ Download {filename}",
+                data=b,
+                file_name=filename,
+                mime=mime,
+                use_container_width=True
+            )
 else:
-    st.info("Upload an artifact and click **Run IVC Analysis** to view results.")
+    st.info("⬆️ Upload an artifact and tap **Run IVC Analysis** to view results.")
