@@ -431,7 +431,7 @@ with tabs[2]:
             "label": label if label != "(none)" else "",
             "notes": notes
         })
-                    rows.append(row)
+            rows.append(row)
                 if rows:
                     save_labeled_rows = True
                     save_labeled_rows = False
