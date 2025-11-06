@@ -75,16 +75,6 @@ def extract_shapes_and_patterns(gray: np.ndarray) -> Dict:
     frequencies = [round(float(np.random.uniform(7, 14)), 2) for _ in range(3)]
     return {"shapes": shapes, "patterns": patterns, "frequencies": frequencies, "edges": edges}
 
-def run_ocr_and_data(gray: np.ndarray):
-    try:
-        ocr_data = pytesseract.image_to_data(gray, output_type=pytesseract.Output.DICT)
-        # join words into a single string
-        words = [w for w in ocr_data.get("text", []) if w.strip()]
-        text = " ".join(words).strip()
-        return text, ocr_data
-    except Exception as e:
-        return f"[OCR error: {e}]", None
-
 def draw_energy_overlay(img: np.ndarray, symbol_data: Dict) -> np.ndarray:
     """
     Draw contour-based 'energy lines' derived from the artifact itself.
@@ -132,21 +122,7 @@ def draw_energy_overlay(img: np.ndarray, symbol_data: Dict) -> np.ndarray:
     final = cv2.addWeighted(field_overlay, 0.9, tint, 0.1, 0)
 
     return final
-    
-def draw_ocr_boxes(img: np.ndarray, ocr_data):
-    overlay = img.copy()
-    if not ocr_data:
-        return overlay
-    n = len(ocr_data.get("text", []))
-    for i in range(n):
-        try:
-            conf = float(ocr_data["conf"][i])
-        except Exception:
-            conf = -1.0
-        if conf > 30:
-            x, y, w, h = int(ocr_data["left"][i]), int(ocr_data["top"][i]), int(ocr_data["width"][i]), int(ocr_data["height"][i])
-            cv2.rectangle(overlay, (x, y), (x + w, y + h), (0, 255, 0), 2)
-    return overlay
+
 
 # -----------------------
 # Utility: similarity scoring
