@@ -1,9 +1,3 @@
-"""
-IVC Translator (Phase 1.5 – rule-based + auto logging, stable version)
------------------------------------------------------------------------
-Safely maps IVC shapes/patterns to meanings and logs unrecognized items.
-"""
-
 import re
 import os
 import csv
