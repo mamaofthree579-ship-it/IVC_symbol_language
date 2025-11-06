@@ -415,11 +415,11 @@ with tabs[2]:
             # show crops in a grid with dropdowns
             cols = st.columns(3)
             assigned = []
-for i, cand in enumerate(candidates):
-    crop = cand["crop"]
-    bbox = cand["bbox"]
-    col = cols[i % 3]
-    with col:
+        for i, cand in enumerate(candidates):
+            crop = cand["crop"]
+            bbox = cand["bbox"]
+            col = cols[i % 3]
+        with col:
         st.image(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB), use_column_width=True)
         hint = cand.get("hint", "")
         label = st.selectbox(f"Assign label for region #{i} (hint: {hint})",
