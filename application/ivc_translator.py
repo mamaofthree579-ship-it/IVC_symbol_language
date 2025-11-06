@@ -109,32 +109,27 @@ def ivc_translate(symbol_data: Dict[str, List[str]], ocr_text: str = "") -> str:
         avg_freq = round(sum(frequencies) / len(frequencies), 2)
         interpretations.append(f"Average resonance frequency: **{avg_freq} Hz** (arbitrary units).")
 
-    # --- OCR-based hints ---
+        # --- OCR hints ---
     if ocr_text:
         if re.search(r"[0-9]", ocr_text):
-            interpretations.append("Numeric inscriptions suggest quantitative calibration or measurement data.")
+            interpretations.append("Numeric inscriptions suggest calibration or measurement data.")
         elif re.search(r"[A-Za-z]", ocr_text):
-            interpretations.append("Alphabetic characters found — possible linguistic overlay detected.")
+            interpretations.append("Alphabetic overlay detected — possible linguistic encoding.")
         else:
             interpretations.append("Symbolic markings only; no phonetic overlay found.")
     else:
-        interpretations.append("No text detected; analysis based on geometry only.")
+        interpretations.append("No text detected; geometry-based interpretation only.")
 
-    # --- fallback ---
-    if not interpretations:
-        interpretations.append("Unclassified pattern — add to dataset for future training.")
+    # --- log new data if needed ---
+    if unclassified_detected:
+        log_unclassified({
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
+            "shapes": ",".join(shapes),
+            "patterns": ",".join(patterns),
+            "ocr_text": ocr_text[:200],
+            "notes": "Auto-logged from IVC Analyzer",
+            "pending_label": ""
+        })
+        interpretations.append("🧾 Unclassified elements logged for dataset growth.")
 
     return "\n".join(interpretations)
-
-
-# ---------------------------------------------------------------------
-# 4. Simple demo
-# ---------------------------------------------------------------------
-if __name__ == "__main__":
-    demo_input = {
-        "shapes": ["spiral", "unknown_shape"],
-        "patterns": ["spiral-arrow", "mystery_pattern"],
-        "frequencies": [12.3, 14.8, 13.2]
-    }
-    print(ivc_translate(demo_input, ocr_text="AB12"))
-    print("\n→ Check ivc_symbol_log.csv for logged items.")
