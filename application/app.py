@@ -415,29 +415,22 @@ with tabs[2]:
             # show crops in a grid with dropdowns
             cols = st.columns(3)
             assigned = []
-            for i,cand in enumerate(candidates):
-                crop = cand["crop"]
-                bbox = cand["bbox"]
-                col = cols[i % 3]
-                with col:
-                    st.image(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB), use_column_width=True)
-                    hint = cand.get("hint","")
-                    label = st.selectbox(f"Assign label for region #{i} (hint: {hint})", options=["(none)"] + list(SYMBOL_LIB.keys()), index=0, key=f"lbl_{i}")
-                    notes = st.text_input(f"notes #{i}", key=f"note_{i}")
-                    assigned.append({"index":i, "bbox":bbox, "label":label if label!=="(none)" else "", "notes":notes})
-            if st.button("Save labeled rows"):
-                rows = []
-                for a in assigned:
-                    if not a["label"]:
-                        continue
-                    x1,y1,x2,y2 = a["bbox"]
-                    row = {
-                        "timestamp": datetime.now().isoformat(timespec="seconds"),
-                        "image_file": getattr(up,"name","uploaded"),
-                        "bbox": f"{x1},{y1},{x2},{y2}",
-                        "label": a["label"],
-                        "notes": a["notes"]
-                    }
+for i, cand in enumerate(candidates):
+    crop = cand["crop"]
+    bbox = cand["bbox"]
+    col = cols[i % 3]
+    with col:
+        st.image(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB), use_column_width=True)
+        hint = cand.get("hint", "")
+        label = st.selectbox(f"Assign label for region #{i} (hint: {hint})",
+                             options=["(none)"] + list(SYMBOL_LIB.keys()), index=0, key=f"lbl_{i}")
+        notes = st.text_input(f"notes #{i}", key=f"note_{i}")
+        assigned.append({
+            "index": i,
+            "bbox": bbox,
+            "label": label if label != "(none)" else "",
+            "notes": notes
+        })
                     rows.append(row)
                 if rows:
                     save_labeled_rows = True
