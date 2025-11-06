@@ -86,37 +86,42 @@ def run_ocr_and_data(gray: np.ndarray):
         return f"[OCR error: {e}]", None
 
 def draw_energy_overlay(img: np.ndarray, symbol_data: Dict) -> np.ndarray:
-    """Create a contour-based energy flow visualization derived from the artifact itself."""
-    overlay = img.copy()
-    h, w = img.shape[:2]
-
-    # 1. Detect edges and gradients
+    """
+    Draw contour-based 'energy lines' derived from the artifact itself.
+    The Canny edges are colour-mapped and intensity-blended with the original image.
+    """
+    # grayscale + smooth
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    edges = cv2.Canny(gray, 50, 150)
+    gray = cv2.GaussianBlur(gray, (5, 5), 0)
 
-    # Compute gradients (energy flow direction)
+    # --- Edge detection to simulate symbolic pathways ---
+    edges = cv2.Canny(gray, 100, 200)
+
+    # use gradients to colour-encode direction / intensity
     gx = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=5)
     gy = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=5)
     magnitude, angle = cv2.cartToPolar(gx, gy, angleInDegrees=True)
-
-    # Normalize magnitude for visibility
     mag_norm = cv2.normalize(magnitude, None, 0, 255, cv2.NORM_MINMAX)
     mag_uint8 = np.uint8(mag_norm)
 
-    # 2. Create base energy field from gradient directions
-    hsv = np.zeros((h, w, 3), dtype=np.uint8)
-    hsv[..., 0] = np.uint8((angle / 2) % 180)     # Hue = flow direction
-    hsv[..., 1] = 255                             # Full saturation
-    hsv[..., 2] = mag_uint8                       # Brightness = intensity
-    field_color = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
-    field_color = cv2.GaussianBlur(field_color, (9, 9), 0)
+    # convert flow direction to colour
+    hsv = np.zeros_like(img)
+    hsv[..., 0] = np.uint8((angle / 2) % 180)
+    hsv[..., 1] = 255
+    hsv[..., 2] = mag_uint8
+    flow_coloured = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
 
-    # 3. Mask with edge map to show “energy lines”
-    mask = cv2.dilate(edges, np.ones((3, 3), np.uint8), iterations=1)
-    field_lines = cv2.bitwise_and(field_color, field_color, mask=mask)
+    # mask only the edge regions so the "energy" follows real contours
+    edge_colour = cv2.bitwise_and(flow_coloured, flow_coloured, mask=edges)
 
-    # 4. Color-tint based on symbol type
-    tint = np.zeros_like(field_lines)
+    # small blur to give glowing field lines
+    edge_colour = cv2.GaussianBlur(edge_colour, (3, 3), 0)
+
+    # combine with the original image
+    field_overlay = cv2.addWeighted(img, 0.7, edge_colour, 0.8, 0)
+
+    # optional tint according to detected shapes
+    tint = np.zeros_like(img)
     color_map = {
         "spiral": (0, 255, 255),
         "triangle": (0, 128, 255),
@@ -126,18 +131,11 @@ def draw_energy_overlay(img: np.ndarray, symbol_data: Dict) -> np.ndarray:
         "lattice": (255, 255, 0)
     }
     for shape in symbol_data.get("shapes", []):
-        c = color_map.get(shape.lower(), (200, 200, 200))
-        tint[:] = cv2.add(tint, np.full_like(tint, c, dtype=np.uint8))
-
-    # Blend contour energy lines + tint + original artifact
-    energy_map = cv2.addWeighted(field_lines, 0.9, tint, 0.2, 0)
-    final = cv2.addWeighted(img, 0.6, energy_map, 0.8, 0)
-
-    # Optional soft blur for smoother fields
-    final = cv2.bilateralFilter(final, 9, 75, 75)
+        tint[:] = cv2.add(tint, np.full_like(tint, color_map.get(shape.lower(), (200,200,200))))
+    final = cv2.addWeighted(field_overlay, 0.9, tint, 0.1, 0)
 
     return final
-
+    
 def draw_ocr_boxes(img: np.ndarray, ocr_data):
     overlay = img.copy()
     if not ocr_data:
