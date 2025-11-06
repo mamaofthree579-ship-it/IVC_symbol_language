@@ -582,7 +582,7 @@ with tabs[3]:
     if os.path.exists(LOG_FILE):
         st.markdown("### Analysis Log (ivc_symbol_log.csv)")
         df = pd.read_csv(LOG_FILE, on_bad_lines="skip", engine="python")
-except Exception as e:
+        except Exception as e:
     st.error(f"Failed to read analysis log: {e}")
     df = pd.DataFrame()
         q = st.text_input("Filter analysis log", key="filter_log")
