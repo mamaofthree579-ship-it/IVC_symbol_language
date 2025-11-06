@@ -1,113 +1,85 @@
-"""
-IVC Analyzer — Mobile + Log Viewer + Hybrid Compare Mode
-Place this file next to ivc_translator.py (which must provide ivc_translate, log_unclassified, LOG_FILE, GEOMETRIC_MEANINGS).
-"""
-
 import streamlit as st
-import numpy as np
-import pandas as pd
 import cv2
+import numpy as np
 import pytesseract
-import io
+import pandas as pd
+import json
 import os
 from datetime import datetime
-from difflib import SequenceMatcher
-from typing import Dict, List
+from typing import Dict
 
-# Import translator utilities from your ivc_translator module
-from ivc_translator import ivc_translate, log_unclassified, LOG_FILE, GEOMETRIC_MEANINGS
+# --- SETUP ---
+st.set_page_config(page_title="IVC Symbol Decoder", layout="wide")
 
-# New compare log file
-COMPARE_LOG_FILE = "ivc_compare_log.csv"
+if "symbol_log" not in st.session_state:
+    st.session_state["symbol_log"] = []
 
-# -----------------------
-# Page config & styling
-# -----------------------
-st.set_page_config(page_title="IVC Analyzer", page_icon="🌀", layout="centered", initial_sidebar_state="collapsed")
-st.title("🌀 IVC Analyzer — Analyze · Log · Compare")
-st.caption("Upload artifacts, decode with IVC, review logged items, or compare two artifacts (hybrid mode).")
+# --- UTILITIES ---
 
-st.markdown("""
-<style>
-button, .stTextInput, .stSelectbox, .stDownloadButton { font-size: 16px !important; }
-</style>
-""", unsafe_allow_html=True)
+def save_symbol_log(entry: Dict):
+    st.session_state["symbol_log"].append(entry)
+    with open("symbol_log.json", "w") as f:
+        json.dump(st.session_state["symbol_log"], f, indent=2)
 
-# -----------------------
-# Helpers: image preprocessing, detection, OCR
-# -----------------------
-def read_image_bytes(uploaded_file) -> np.ndarray:
-    file_bytes = uploaded_file.read()
-    arr = np.frombuffer(file_bytes, np.uint8)
-    img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-    return img, file_bytes
 
-def preprocess_gray(img: np.ndarray) -> np.ndarray:
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    gray = cv2.medianBlur(gray, 3)
-    return gray
-
-def extract_shapes_and_patterns(gray: np.ndarray) -> Dict:
-    """Contour-based simple detector to find triangles/squares/circles and mock patterns."""
+def analyze_symbols(ocr_text: str) -> Dict:
     shapes = []
-    edges = cv2.Canny(gray, 60, 150)
-    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    for c in contours:
-        if cv2.contourArea(c) < 50:
-            continue
-        approx = cv2.approxPolyDP(c, 0.04 * cv2.arcLength(c, True), True)
-        sides = len(approx)
-        if sides == 3:
-            shapes.append("triangle")
-        elif sides == 4:
-            shapes.append("square")
-        elif sides > 5:
-            shapes.append("circle")
-    # remove duplicates, preserve order
-    shapes = list(dict.fromkeys(shapes))
-    # patterns heuristic
-    patterns = []
-    if len(shapes) >= 3:
-        patterns.append("lattice")
-    if "circle" in shapes and "square" in shapes:
-        patterns.append("spiral-arrow")  # heuristic composite
-    # frequencies: mocked set of resonance estimates
-    frequencies = [round(float(np.random.uniform(7, 14)), 2) for _ in range(3)]
-    return {"shapes": shapes, "patterns": patterns, "frequencies": frequencies, "edges": edges}
+    text = ocr_text.lower()
+    if "triangle" in text or "△" in text:
+        shapes.append("triangle")
+    if "square" in text or "□" in text:
+        shapes.append("square")
+    if "circle" in text or "○" in text:
+        shapes.append("circle")
+    if "spiral" in text or "↻" in text:
+        shapes.append("spiral")
+    if "arrow" in text or "→" in text:
+        shapes.append("arrow")
+    if "grid" in text or "lattice" in text:
+        shapes.append("lattice")
+    return {"shapes": shapes}
 
-def draw_energy_overlay(img: np.ndarray, symbol_data: Dict) -> np.ndarray:
-    """
-    Draw contour-based 'energy lines' derived from the artifact itself.
-    The Canny edges are colour-mapped and intensity-blended with the original image.
-    """
-    
-    # --- Edge detection to simulate symbolic pathways ---
+
+# --- ENERGY FIELD VISUALIZATION ---
+
+def draw_energy_overlay(img: np.ndarray, symbol_data: Dict, mode: str = "Edge Flow") -> np.ndarray:
+    """Visualize energy fields derived from the artifact image."""
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    gray = cv2.GaussianBlur(gray, (5, 5), 0)
+
+    # --- Edge Flow Mode ---
     edges = cv2.Canny(gray, 100, 200)
-
-    # use gradients to colour-encode direction / intensity
     gx = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=5)
     gy = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=5)
     magnitude, angle = cv2.cartToPolar(gx, gy, angleInDegrees=True)
     mag_norm = cv2.normalize(magnitude, None, 0, 255, cv2.NORM_MINMAX)
     mag_uint8 = np.uint8(mag_norm)
-
-    # convert flow direction to colour
     hsv = np.zeros_like(img)
     hsv[..., 0] = np.uint8((angle / 2) % 180)
     hsv[..., 1] = 255
     hsv[..., 2] = mag_uint8
-    flow_coloured = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
+    flow_colored = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
+    edge_colored = cv2.bitwise_and(flow_colored, flow_colored, mask=edges)
+    edge_colored = cv2.GaussianBlur(edge_colored, (3, 3), 0)
+    edge_overlay = cv2.addWeighted(img, 0.7, edge_colored, 0.8, 0)
 
-    # mask only the edge regions so the "energy" follows real contours
-    edge_colour = cv2.bitwise_and(flow_coloured, flow_coloured, mask=edges)
+    # --- Gradient Field Mode ---
+    y_indices, x_indices = np.mgrid[0:img.shape[0], 0:img.shape[1]]
+    freq = 0.02 * (len(symbol_data.get("shapes", [])) + 1)
+    flow = (np.sin(x_indices * freq) + np.cos(y_indices * freq * 0.7)) * 127 + 128
+    flow = np.uint8(flow)
+    plasma = cv2.applyColorMap(flow, cv2.COLORMAP_TWILIGHT)
+    gradient_overlay = cv2.addWeighted(img, 0.7, plasma, 0.5, 0)
 
-    # small blur to give glowing field lines
-    edge_colour = cv2.GaussianBlur(edge_colour, (3, 3), 0)
+    # --- Hybrid Mode ---
+    if mode == "Hybrid":
+        result = cv2.addWeighted(edge_overlay, 0.7, gradient_overlay, 0.7, 0)
+    elif mode == "Gradient Field":
+        result = gradient_overlay
+    else:
+        result = edge_overlay
 
-    # combine with the original image
-    field_overlay = cv2.addWeighted(img, 0.7, edge_colour, 0.8, 0)
-
-    # optional tint according to detected shapes
+    # --- Symbol Tint ---
     tint = np.zeros_like(img)
     color_map = {
         "spiral": (0, 255, 255),
@@ -115,247 +87,108 @@ def draw_energy_overlay(img: np.ndarray, symbol_data: Dict) -> np.ndarray:
         "square": (0, 255, 0),
         "circle": (255, 0, 0),
         "arrow": (255, 0, 255),
-        "lattice": (255, 255, 0)
+        "lattice": (255, 255, 0),
     }
     for shape in symbol_data.get("shapes", []):
-        tint[:] = cv2.add(tint, np.full_like(tint, color_map.get(shape.lower(), (200,200,200))))
-    final = cv2.addWeighted(field_overlay, 0.9, tint, 0.1, 0)
+        tint[:] = cv2.add(tint, np.full_like(tint, color_map.get(shape.lower(), (200, 200, 200))))
+    final = cv2.addWeighted(result, 0.9, tint, 0.1, 0)
 
     return final
 
 
-# -----------------------
-# Utility: similarity scoring
-# -----------------------
-def jaccard(a: List[str], b: List[str]) -> float:
-    set_a, set_b = set([s.lower() for s in a]), set([s.lower() for s in b])
-    if not set_a and not set_b:
-        return 1.0
-    inter = set_a.intersection(set_b)
-    union = set_a.union(set_b)
-    return len(inter) / len(union) if union else 0.0
+# --- IVC TRANSLATOR (placeholder logic) ---
+def ivc_translate(symbol_data: Dict, text: str) -> str:
+    if not symbol_data["shapes"]:
+        return "No recognized symbols for translation."
+    desc = ", ".join(symbol_data["shapes"])
+    return f"Decoded energy interaction pattern: {desc}. This represents balance between form and field."
 
-def text_similarity(a: str, b: str) -> float:
-    if not a and not b:
-        return 1.0
-    return SequenceMatcher(None, a, b).ratio()
 
-# -----------------------
-# Logging comparison results
-# -----------------------
-def log_compare_result(entry: Dict):
-    header = ["timestamp", "imgA", "imgB", "shapesA", "shapesB", "patternsA", "patternsB",
-              "ocrA", "ocrB", "shape_jaccard", "pattern_jaccard", "ocr_similarity", "combined_score", "notes"]
-    new_file = not os.path.exists(COMPARE_LOG_FILE)
-    try:
-        with open(COMPARE_LOG_FILE, "a", newline="", encoding="utf-8") as f:
-            df = pd.DataFrame([entry])
-            if new_file:
-                df.to_csv(f, index=False)
-            else:
-                df.to_csv(f, index=False, header=False)
-    except Exception as e:
-        print(f"[Compare log] write error: {e}")
+# --- MAIN APP INTERFACE ---
 
-# -----------------------
-# UI Tabs: Analyze · Log Viewer · Compare
-# -----------------------
-tabs = st.tabs(["🔍 Analyze", "📘 Symbol Log Viewer", "🔬 Compare Mode"])
+st.title("🌀 IVC Symbol Decoder & Energy Mapping")
 
-# ---------- TAB: Analyze ----------
-with tabs[0]:
-    st.header("Analyze a Single Artifact")
-    uploaded_file = st.file_uploader("Upload artifact image (jpg/png)", type=["jpg", "jpeg", "png"], key="analyze_upload")
+tab1, tab2, tab3 = st.tabs(["🔍 Analyze", "🔬 Compare Mode", "📜 Symbol Log Viewer"])
+
+# --- TAB 1: ANALYZE SINGLE IMAGE ---
+with tab1:
+    st.header("Analyze Artifact Image")
+    field_mode = st.sidebar.selectbox("Field Visualization Mode", ["Edge Flow", "Gradient Field", "Hybrid"])
+
+    uploaded_file = st.file_uploader("Upload Artifact Image", type=["jpg", "png", "jpeg"])
     if uploaded_file:
-        img, file_bytes = read_image_bytes(uploaded_file)
-        st.image(cv2.cvtColor(img, cv2.COLOR_BGR2RGB), caption="Uploaded Artifact", use_container_width=True)
-        if st.button("▶️ Run IVC Analysis", key="run_single"):
-            gray = preprocess_gray(img)
-            symbol_data = extract_shapes_and_patterns(gray)
-            ocr_text, ocr_data = run_ocr_and_data(gray)
-            translation_output = ivc_translate(symbol_data, ocr_text)
-            # full-run log (every run)
-            entry = {
-                "timestamp": datetime.now().isoformat(timespec="seconds"),
-                "shapes": ",".join(symbol_data.get("shapes", [])),
-                "patterns": ",".join(symbol_data.get("patterns", [])),
-                "ocr_text": ocr_text[:200],
-                "notes": "Auto-logged run (Analyze tab)",
-                "pending_label": ""
-            }
-            # use translator logging helper for consistent storage
-            try:
-                log_unclassified(entry)
-            except Exception:
-                # fallback if direct writer not available
-                pass
+        file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
+        img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
 
-            st.success("✅ Analysis complete")
-            st.subheader("Symbol Data")
-            st.json({k:v for k,v in symbol_data.items() if k != "edges"})
-
-            st.subheader("IVC Translation")
-            st.markdown(translation_output)
-
-            st.subheader("Energy Map (Overlay)")
-            energy_overlay = draw_energy_overlay(img, symbol_data)
-            st.image(cv2.cvtColor(energy_overlay, cv2.COLOR_BGR2RGB), use_container_width=True)
-
-            st.subheader("OCR output and overlay")
-            st.code(ocr_text or "[No OCR text detected]")
-            ocr_overlay = draw_ocr_boxes(img, ocr_data)
-            st.image(cv2.cvtColor(ocr_overlay, cv2.COLOR_BGR2RGB), use_container_width=True)
-
-            # session report download
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            session_report = {
-                "timestamp": timestamp,
-                "shapes": ",".join(symbol_data.get("shapes", [])),
-                "patterns": ",".join(symbol_data.get("patterns", [])),
-                "ocr_text": ocr_text,
-                "translation": translation_output
-            }
-            csv_bytes = pd.DataFrame([session_report]).to_csv(index=False).encode("utf-8")
-            st.download_button(label="💾 Download Analysis CSV", data=csv_bytes, file_name=f"ivc_session_{timestamp}.csv", mime="text/csv")
-
-# ---------- TAB: Symbol Log Viewer ----------
-with tabs[1]:
-    st.header("Symbol Log Viewer")
-    st.markdown("Browse & download your `ivc_symbol_log.csv` (auto-grown).")
-    if os.path.exists(LOG_FILE):
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         try:
-            df_log = pd.read_csv(LOG_FILE)
-            search = st.text_input("🔎 Search log (shapes, patterns, text)", key="log_search")
-            if search:
-                mask = df_log.apply(lambda r: search.lower() in r.astype(str).str.lower().to_string(), axis=1)
-                df_filtered = df_log[mask]
-            else:
-                df_filtered = df_log
-            st.dataframe(df_filtered, use_container_width=True)
-            st.caption(f"Total log entries: {len(df_log)}")
-            st.download_button("💾 Download symbol log", data=df_log.to_csv(index=False).encode("utf-8"), file_name="ivc_symbol_log.csv", mime="text/csv")
-        except Exception as e:
-            st.error(f"Failed to load log: {e}")
-    else:
-        st.info("No symbol log yet — run analyses to build it.")
+            ocr_text = pytesseract.image_to_string(gray)
+        except:
+            ocr_text = "Tesseract not available."
 
-# ---------- TAB: Compare Mode ----------
-with tabs[2]:
-    st.header("🔬 Compare Mode — Hybrid visual + database + energy mapping")
+        symbol_data = analyze_symbols(ocr_text)
+        energy_map = draw_energy_overlay(img, symbol_data, field_mode)
+        translation_output = ivc_translate(symbol_data, ocr_text)
+
+        st.image(cv2.cvtColor(energy_map, cv2.COLOR_BGR2RGB), caption="Energy Mapping", use_column_width=True)
+        st.subheader("Translation Output")
+        st.write(translation_output)
+        st.text_area("Detected OCR Text", ocr_text, height=150)
+
+        log_entry = {
+            "timestamp": str(datetime.now()),
+            "symbols": symbol_data["shapes"],
+            "ocr": ocr_text,
+            "translation": translation_output
+        }
+        save_symbol_log(log_entry)
+
+# --- TAB 2: COMPARE MODE ---
+with tab2:
+    st.header("Compare Two Artifacts Side-by-Side")
+    field_mode = st.sidebar.selectbox("Compare Field Mode", ["Edge Flow", "Gradient Field", "Hybrid"])
+
     col1, col2 = st.columns(2)
     with col1:
-        imgA_file = st.file_uploader("Upload Image A", type=["jpg","jpeg","png"], key="cmp_A")
+        file1 = st.file_uploader("Upload First Artifact", key="file1", type=["jpg", "png", "jpeg"])
     with col2:
-        imgB_file = st.file_uploader("Upload Image B", type=["jpg","jpeg","png"], key="cmp_B")
+        file2 = st.file_uploader("Upload Second Artifact", key="file2", type=["jpg", "png", "jpeg"])
 
-    if imgA_file and imgB_file:
-        # read both
-        imgA, _ = read_image_bytes(imgA_file)
-        imgB, _ = read_image_bytes(imgB_file)
+    if file1 and file2:
+        img1 = cv2.imdecode(np.frombuffer(file1.read(), np.uint8), cv2.IMREAD_COLOR)
+        img2 = cv2.imdecode(np.frombuffer(file2.read(), np.uint8), cv2.IMREAD_COLOR)
 
-        st.markdown("### Preview (A | B)")
-        cols = st.columns(2)
-        cols[0].image(cv2.cvtColor(imgA, cv2.COLOR_BGR2RGB), use_container_width=True)
-        cols[1].image(cv2.cvtColor(imgB, cv2.COLOR_BGR2RGB), use_container_width=True)
+        ocr1 = pytesseract.image_to_string(cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY))
+        ocr2 = pytesseract.image_to_string(cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY))
 
-        if st.button("▶️ Run Compare Analysis"):
-            # preprocess and extract
-            grayA = preprocess_gray(imgA)
-            grayB = preprocess_gray(imgB)
-            dataA = extract_shapes_and_patterns(grayA)
-            dataB = extract_shapes_and_patterns(grayB)
-            ocrA, ocr_dataA = run_ocr_and_data(grayA)
-            ocrB, ocr_dataB = run_ocr_and_data(grayB)
+        symbols1 = analyze_symbols(ocr1)
+        symbols2 = analyze_symbols(ocr2)
 
-            # translations
-            transA = ivc_translate(dataA, ocrA)
-            transB = ivc_translate(dataB, ocrB)
+        map1 = draw_energy_overlay(img1, symbols1, field_mode)
+        map2 = draw_energy_overlay(img2, symbols2, field_mode)
 
-            # similarity metrics
-            shape_score = jaccard(dataA.get("shapes", []), dataB.get("shapes", []))
-            pattern_score = jaccard(dataA.get("patterns", []), dataB.get("patterns", []))
-            ocr_score = text_similarity(ocrA or "", ocrB or "")
-            # weighted combination
-            combined_score = round((0.4 * shape_score + 0.3 * pattern_score + 0.3 * ocr_score), 3)
+        sim_score = len(set(symbols1["shapes"]) & set(symbols2["shapes"])) / max(
+            1, len(set(symbols1["shapes"]) | set(symbols2["shapes"]))
+        )
+        st.metric("Symbolic Similarity", f"{sim_score * 100:.1f}%")
 
-            # energy overlays and merged resonance map
-            overlayA = draw_energy_overlay(imgA, dataA)
-            overlayB = draw_energy_overlay(imgB, dataB)
+        c1, c2 = st.columns(2)
+        with c1:
+            st.image(cv2.cvtColor(map1, cv2.COLOR_BGR2RGB), caption="Artifact 1 Energy Map", use_column_width=True)
+        with c2:
+            st.image(cv2.cvtColor(map2, cv2.COLOR_BGR2RGB), caption="Artifact 2 Energy Map", use_column_width=True)
 
-            # merge overlays visually: simple alpha blend after resizing to same dims
-            h = max(overlayA.shape[0], overlayB.shape[0])
-            w = max(overlayA.shape[1], overlayB.shape[1])
-            # create canvases and place images centered
-            canvasA = np.zeros((h, w, 3), dtype=np.uint8)
-            canvasB = np.zeros((h, w, 3), dtype=np.uint8)
-            # place A
-            canvasA[:overlayA.shape[0], :overlayA.shape[1]] = overlayA
-            canvasB[:overlayB.shape[0], :overlayB.shape[1]] = overlayB
-            merged = cv2.addWeighted(canvasA, 0.5, canvasB, 0.5, 0)
-
-            # display results
-            st.success("✅ Compare complete")
-            st.subheader("A: Detected Shapes & Translation")
-            st.json({k:v for k,v in dataA.items() if k!="edges"})
-            st.markdown(transA)
-
-            st.subheader("B: Detected Shapes & Translation")
-            st.json({k:v for k,v in dataB.items() if k!="edges"})
-            st.markdown(transB)
-
-            st.subheader("Similarity Scores")
-            st.write(f"- Shape (Jaccard): **{shape_score:.3f}**")
-            st.write(f"- Pattern (Jaccard): **{pattern_score:.3f}**")
-            st.write(f"- OCR text similarity: **{ocr_score:.3f}**")
-            st.write(f"- **Combined similarity score**: **{combined_score:.3f}**")
-
-            st.subheader("Energy Overlays (A | B | Merged)")
-            c1, c2, c3 = st.columns(3)
-            c1.image(cv2.cvtColor(canvasA, cv2.COLOR_BGR2RGB), caption="Energy A", use_container_width=True)
-            c2.image(cv2.cvtColor(canvasB, cv2.COLOR_BGR2RGB), caption="Energy B", use_container_width=True)
-            c3.image(cv2.cvtColor(merged, cv2.COLOR_BGR2RGB), caption="Merged Resonance Map", use_container_width=True)
-
-            # OCR overlays
-            st.subheader("OCR Overlays (A | B)")
-            ocrovA = draw_ocr_boxes(imgA, ocr_dataA)
-            ocrovB = draw_ocr_boxes(imgB, ocr_dataB)
-            o1, o2 = st.columns(2)
-            o1.image(cv2.cvtColor(ocrovA, cv2.COLOR_BGR2RGB), caption="OCR A", use_container_width=True)
-            o2.image(cv2.cvtColor(ocrovB, cv2.COLOR_BGR2RGB), caption="OCR B", use_container_width=True)
-
-            # log comparison
-            cmp_entry = {
-                "timestamp": datetime.now().isoformat(timespec="seconds"),
-                "imgA": imgA_file.name,
-                "imgB": imgB_file.name,
-                "shapesA": ",".join(dataA.get("shapes", [])),
-                "shapesB": ",".join(dataB.get("shapes", [])),
-                "patternsA": ",".join(dataA.get("patterns", [])),
-                "patternsB": ",".join(dataB.get("patterns", [])),
-                "ocrA": ocrA[:200],
-                "ocrB": ocrB[:200],
-                "shape_jaccard": round(shape_score, 3),
-                "pattern_jaccard": round(pattern_score, 3),
-                "ocr_similarity": round(ocr_score, 3),
-                "combined_score": combined_score,
-                "notes": "Auto-compare (hybrid)"
-            }
-            log_compare_result(cmp_entry)
-
-            st.success("🔎 Comparison saved to ivc_compare_log.csv")
-            # provide download of the comparison row
-            st.download_button("💾 Download comparison row (CSV)", data=pd.DataFrame([cmp_entry]).to_csv(index=False).encode("utf-8"),
-                               file_name=f"ivc_compare_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv", mime="text/csv")
-
+# --- TAB 3: LOG VIEWER ---
+with tab3:
+    st.header("Symbol Log Viewer")
+    if st.session_state["symbol_log"]:
+        df = pd.DataFrame(st.session_state["symbol_log"])
+        st.dataframe(df)
+        st.download_button(
+            "Download Symbol Log",
+            data=json.dumps(st.session_state["symbol_log"], indent=2),
+            file_name="symbol_log.json",
+            mime="application/json"
+        )
     else:
-        st.info("Upload both Image A and Image B to run a hybrid compare.")
-
-# Footer: quick access to logs if present
-st.markdown("---")
-if os.path.exists(COMPARE_LOG_FILE):
-    if st.button("Open comparison log (ivc_compare_log.csv)"):
-        try:
-            df_cmp = pd.read_csv(COMPARE_LOG_FILE)
-            st.dataframe(df_cmp, use_container_width=True)
-        except Exception as e:
-            st.error(f"Cannot open compare log: {e}")
+        st.info("No symbol analyses logged yet.")
