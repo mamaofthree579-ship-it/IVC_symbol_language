@@ -86,12 +86,37 @@ def run_ocr_and_data(gray: np.ndarray):
         return f"[OCR error: {e}]", None
 
 def draw_energy_overlay(img: np.ndarray, symbol_data: Dict) -> np.ndarray:
-    """Draw a semi-transparent 'energy field' overlay with geometric anchors."""
+    """Create a contour-based energy flow visualization derived from the artifact itself."""
     overlay = img.copy()
     h, w = img.shape[:2]
-    energy_layer = np.zeros((h, w, 3), dtype=np.uint8)
 
-    # Map each symbol to a color/frequency intensity
+    # 1. Detect edges and gradients
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    edges = cv2.Canny(gray, 50, 150)
+
+    # Compute gradients (energy flow direction)
+    gx = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=5)
+    gy = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=5)
+    magnitude, angle = cv2.cartToPolar(gx, gy, angleInDegrees=True)
+
+    # Normalize magnitude for visibility
+    mag_norm = cv2.normalize(magnitude, None, 0, 255, cv2.NORM_MINMAX)
+    mag_uint8 = np.uint8(mag_norm)
+
+    # 2. Create base energy field from gradient directions
+    hsv = np.zeros((h, w, 3), dtype=np.uint8)
+    hsv[..., 0] = np.uint8((angle / 2) % 180)     # Hue = flow direction
+    hsv[..., 1] = 255                             # Full saturation
+    hsv[..., 2] = mag_uint8                       # Brightness = intensity
+    field_color = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
+    field_color = cv2.GaussianBlur(field_color, (9, 9), 0)
+
+    # 3. Mask with edge map to show “energy lines”
+    mask = cv2.dilate(edges, np.ones((3, 3), np.uint8), iterations=1)
+    field_lines = cv2.bitwise_and(field_color, field_color, mask=mask)
+
+    # 4. Color-tint based on symbol type
+    tint = np.zeros_like(field_lines)
     color_map = {
         "spiral": (0, 255, 255),
         "triangle": (0, 128, 255),
@@ -100,41 +125,16 @@ def draw_energy_overlay(img: np.ndarray, symbol_data: Dict) -> np.ndarray:
         "arrow": (255, 0, 255),
         "lattice": (255, 255, 0)
     }
+    for shape in symbol_data.get("shapes", []):
+        c = color_map.get(shape.lower(), (200, 200, 200))
+        tint[:] = cv2.add(tint, np.full_like(tint, c, dtype=np.uint8))
 
-    # --- Step 1: Generate flowing "energy lines" ---
-    # Create sine-wave based flow patterns modulated by symbol count
-    y_indices, x_indices = np.mgrid[0:h, 0:w]
-    freq = 0.02 * (len(symbol_data.get("shapes", [])) + 1)
-    flow = (np.sin(x_indices * freq) + np.cos(y_indices * freq * 0.7)) * 127 + 128
-    flow = np.uint8(flow)
+    # Blend contour energy lines + tint + original artifact
+    energy_map = cv2.addWeighted(field_lines, 0.9, tint, 0.2, 0)
+    final = cv2.addWeighted(img, 0.6, energy_map, 0.8, 0)
 
-    # Convert flow to pseudo plasma color field
-    plasma = cv2.applyColorMap(flow, cv2.COLORMAP_TWILIGHT)
-    energy_layer = cv2.addWeighted(energy_layer, 0.5, plasma, 0.5, 0)
-
-    # --- Step 2: Draw geometric anchors (shapes) ---
-    cx, cy = w // 2, h // 2
-    for i, shape in enumerate(symbol_data.get("shapes", [])):
-        color = color_map.get(shape.lower(), (200, 200, 200))
-        offset = 40 + i * 30
-        if shape == "triangle":
-            pts = np.array([[cx, cy - offset], [cx - offset, cy + offset], [cx + offset, cy + offset]], np.int32)
-            cv2.polylines(energy_layer, [pts], True, color, 2)
-        elif shape == "square":
-            cv2.rectangle(energy_layer, (cx - offset, cy - offset), (cx + offset, cy + offset), color, 2)
-        elif shape == "circle":
-            cv2.circle(energy_layer, (cx, cy), offset, color, 2)
-        elif shape == "spiral":
-            for r in range(10, offset + 10, 10):
-                cv2.circle(energy_layer, (cx, cy), r, color, 1)
-        elif shape == "arrow":
-            cv2.arrowedLine(energy_layer, (cx - offset, cy), (cx + offset, cy), color, 2, tipLength=0.3)
-
-    # --- Step 3: Blend energy field with artifact ---
-    final = cv2.addWeighted(img, 0.7, energy_layer, 0.6, 0)
-
-    # Optionally blur slightly for smoother "field" look
-    final = cv2.GaussianBlur(final, (5, 5), 0)
+    # Optional soft blur for smoother fields
+    final = cv2.bilateralFilter(final, 9, 75, 75)
 
     return final
 
