@@ -482,6 +482,7 @@ with tabs[2]:
 # -----------------------
 with tabs[3]:
     st.header("Logs & Datasets")
+
     if os.path.exists(LOG_FILE):
         st.markdown("### Analysis Log (ivc_symbol_log.csv)")
         df = pd.read_csv(LOG_FILE)
@@ -489,23 +490,38 @@ with tabs[3]:
         if q:
             mask = df.apply(lambda r: q.lower() in r.astype(str).str.lower().to_string(), axis=1)
             df = df[mask]
-        st.dataframe(df, use_column_width=True)
-        st.download_button("Download analysis log", data=df.to_csv(index=False).encode("utf-8"), file_name=LOG_FILE, mime="text/csv")
+        st.dataframe(df)  # updated: no use_column_width
+        st.download_button(
+            "Download analysis log",
+            data=df.to_csv(index=False).encode("utf-8"),
+            file_name=LOG_FILE,
+            mime="text/csv"
+        )
     else:
         st.info("No analysis log yet. Run analyses to populate ivc_symbol_log.csv")
 
     if os.path.exists(COMPARE_LOG_FILE):
         st.markdown("### Compare Log (ivc_compare_log.csv)")
         df2 = pd.read_csv(COMPARE_LOG_FILE)
-        st.dataframe(df2, use_column_width=True)
-        st.download_button("Download compare log", data=df2.to_csv(index=False).encode("utf-8"), file_name=COMPARE_LOG_FILE, mime="text/csv")
+        st.dataframe(df2)
+        st.download_button(
+            "Download compare log",
+            data=df2.to_csv(index=False).encode("utf-8"),
+            file_name=COMPARE_LOG_FILE,
+            mime="text/csv"
+        )
     else:
         st.info("No compare log yet.")
 
     if os.path.exists(LABELED_CSV):
         st.markdown("### Labeled Dataset (ivc_labeled_dataset.csv)")
         dfl = pd.read_csv(LABELED_CSV)
-        st.dataframe(dfl, use_column_width=True)
-        st.download_button("Download labeled dataset", data=dfl.to_csv(index=False).encode("utf-8"), file_name=LABELED_CSV, mime="text/csv")
+        st.dataframe(dfl)
+        st.download_button(
+            "Download labeled dataset",
+            data=dfl.to_csv(index=False).encode("utf-8"),
+            file_name=LABELED_CSV,
+            mime="text/csv"
+        )
     else:
         st.info("No labeled dataset yet. Use Manual Labeling tab to create one.")
