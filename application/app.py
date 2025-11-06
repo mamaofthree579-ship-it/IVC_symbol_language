@@ -90,10 +90,7 @@ def draw_energy_overlay(img: np.ndarray, symbol_data: Dict) -> np.ndarray:
     Draw contour-based 'energy lines' derived from the artifact itself.
     The Canny edges are colour-mapped and intensity-blended with the original image.
     """
-    # grayscale + smooth
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    gray = cv2.GaussianBlur(gray, (5, 5), 0)
-
+    
     # --- Edge detection to simulate symbolic pathways ---
     edges = cv2.Canny(gray, 100, 200)
 
