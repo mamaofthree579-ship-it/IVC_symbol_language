@@ -22,21 +22,30 @@ def save_symbol_log(entry: Dict):
         json.dump(st.session_state["symbol_log"], f, indent=2)
 
 
-def analyze_symbols(ocr_text: str) -> Dict:
+def analyze_symbols(ocr_text: str, img: np.ndarray) -> Dict:
+    """Detect geometric motifs directly from the artifact image."""
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    gray = cv2.GaussianBlur(gray, (5, 5), 0)
+    edges = cv2.Canny(gray, 80, 180)
+    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
     shapes = []
-    text = ocr_text.lower()
-    if "triangle" in text or "△" in text:
-        shapes.append("triangle")
-    if "square" in text or "□" in text:
-        shapes.append("square")
-    if "circle" in text or "○" in text:
-        shapes.append("circle")
-    if "spiral" in text or "↻" in text:
-        shapes.append("spiral")
-    if "arrow" in text or "→" in text:
-        shapes.append("arrow")
-    if "grid" in text or "lattice" in text:
-        shapes.append("lattice")
+    for c in contours:
+        area = cv2.contourArea(c)
+        if area < 200:  # ignore tiny noise
+            continue
+        peri = cv2.arcLength(c, True)
+        approx = cv2.approxPolyDP(c, 0.04 * peri, True)
+        sides = len(approx)
+
+        if sides == 3:
+            shapes.append("triangle")
+        elif sides == 4:
+            x, y, w, h = cv2.boundingRect(approx)
+            ratio = w / float(h)
+            shapes.append("square" if 0.9 < ratio < 1.1 else "rectangle")
+        elif sides > 4:
+            shapes.append("circle")
     return {"shapes": shapes}
 
 
