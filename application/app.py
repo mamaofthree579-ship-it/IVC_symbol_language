@@ -8,6 +8,7 @@ import os
 import csv
 import pandas as pd
 from datetime import datetime
+import shutil
 import matplotlib.pyplot as plt
 
 # -----------------------
@@ -20,6 +21,24 @@ SYMBOL_LIB_FILE = "ivc_symbol_library.json"
 LOG_FILE = "ivc_symbol_log.csv"
 COMPARE_LOG_FILE = "ivc_compare_log.csv"
 LABELED_CSV = "ivc_labeled_dataset.csv"
+BACKUP_DIR = "backups"
+
+# -----------------------
+# Ensure backup directory exists
+# -----------------------
+os.makedirs(BACKUP_DIR, exist_ok=True)
+
+def backup_file(filepath):
+    """Create a timestamped backup of the given file."""
+    if os.path.exists(filepath):
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        fname = os.path.basename(filepath)
+        dest = os.path.join(BACKUP_DIR, f"{ts}_{fname}")
+        try:
+            shutil.copy(filepath, dest)
+            st.info(f"Backup created: {dest}")
+        except Exception as e:
+            st.error(f"Backup failed for {filepath}: {e}")
 
 # -----------------------
 # Default Symbol Library
@@ -46,6 +65,7 @@ with open(SYMBOL_LIB_FILE, "r", encoding="utf-8") as f:
 # CSV Utilities
 # -----------------------
 def append_csv_row(filepath, row):
+    """Append row and automatically back up CSV after update."""
     new_file = not os.path.exists(filepath)
     try:
         with open(filepath, "a", newline="", encoding="utf-8") as f:
@@ -53,6 +73,7 @@ def append_csv_row(filepath, row):
             if new_file:
                 writer.writeheader()
             writer.writerow(row)
+        backup_file(filepath)
     except Exception as e:
         st.error(f"Error writing to {filepath}: {e}")
 
@@ -205,6 +226,7 @@ with tabs[2]:
     if st.button("Save Library"):
         try:
             new_lib = json.loads(edited)
+            backup_file(SYMBOL_LIB_FILE)
             with open(SYMBOL_LIB_FILE, "w", encoding="utf-8") as f:
                 json.dump(new_lib, f, indent=2)
             st.success("Library saved successfully!")
