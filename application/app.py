@@ -86,10 +86,12 @@ def run_ocr_and_data(gray: np.ndarray):
         return f"[OCR error: {e}]", None
 
 def draw_energy_overlay(img: np.ndarray, symbol_data: Dict) -> np.ndarray:
-    """Simple overlay: draw color-coded shapes at center (heuristic)."""
+    """Draw a semi-transparent 'energy field' overlay with geometric anchors."""
     overlay = img.copy()
     h, w = img.shape[:2]
-    cx, cy = w // 2, h // 2
+    energy_layer = np.zeros((h, w, 3), dtype=np.uint8)
+
+    # Map each symbol to a color/frequency intensity
     color_map = {
         "spiral": (0, 255, 255),
         "triangle": (0, 128, 255),
@@ -98,23 +100,43 @@ def draw_energy_overlay(img: np.ndarray, symbol_data: Dict) -> np.ndarray:
         "arrow": (255, 0, 255),
         "lattice": (255, 255, 0)
     }
+
+    # --- Step 1: Generate flowing "energy lines" ---
+    # Create sine-wave based flow patterns modulated by symbol count
+    y_indices, x_indices = np.mgrid[0:h, 0:w]
+    freq = 0.02 * (len(symbol_data.get("shapes", [])) + 1)
+    flow = (np.sin(x_indices * freq) + np.cos(y_indices * freq * 0.7)) * 127 + 128
+    flow = np.uint8(flow)
+
+    # Convert flow to pseudo plasma color field
+    plasma = cv2.applyColorMap(flow, cv2.COLORMAP_TWILIGHT)
+    energy_layer = cv2.addWeighted(energy_layer, 0.5, plasma, 0.5, 0)
+
+    # --- Step 2: Draw geometric anchors (shapes) ---
+    cx, cy = w // 2, h // 2
     for i, shape in enumerate(symbol_data.get("shapes", [])):
         color = color_map.get(shape.lower(), (200, 200, 200))
-        # draw scaled shapes around center to visualize "energy zones"
         offset = 40 + i * 30
         if shape == "triangle":
             pts = np.array([[cx, cy - offset], [cx - offset, cy + offset], [cx + offset, cy + offset]], np.int32)
-            cv2.polylines(overlay, [pts], True, color, 2)
+            cv2.polylines(energy_layer, [pts], True, color, 2)
         elif shape == "square":
-            cv2.rectangle(overlay, (cx - offset, cy - offset), (cx + offset, cy + offset), color, 2)
+            cv2.rectangle(energy_layer, (cx - offset, cy - offset), (cx + offset, cy + offset), color, 2)
         elif shape == "circle":
-            cv2.circle(overlay, (cx, cy), offset, color, 2)
+            cv2.circle(energy_layer, (cx, cy), offset, color, 2)
         elif shape == "spiral":
-            for r in range(10, offset+10, 10):
-                cv2.circle(overlay, (cx, cy), r, color, 1)
+            for r in range(10, offset + 10, 10):
+                cv2.circle(energy_layer, (cx, cy), r, color, 1)
         elif shape == "arrow":
-            cv2.arrowedLine(overlay, (cx - offset, cy), (cx + offset, cy), color, 2, tipLength=0.3)
-    return overlay
+            cv2.arrowedLine(energy_layer, (cx - offset, cy), (cx + offset, cy), color, 2, tipLength=0.3)
+
+    # --- Step 3: Blend energy field with artifact ---
+    final = cv2.addWeighted(img, 0.7, energy_layer, 0.6, 0)
+
+    # Optionally blur slightly for smoother "field" look
+    final = cv2.GaussianBlur(final, (5, 5), 0)
+
+    return final
 
 def draw_ocr_boxes(img: np.ndarray, ocr_data):
     overlay = img.copy()
