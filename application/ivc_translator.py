@@ -1,57 +1,43 @@
-import re
+import re, os, csv
+from datetime import datetime
 from typing import Dict, List
 
-# ---------------------------------------------------------------------
-# 1. Knowledge base: basic geometric → functional mappings
-# ---------------------------------------------------------------------
-
 GEOMETRIC_MEANINGS = {
-    "spiral": {
-        "energy": "Centripetal / centrifugal flow pattern",
-        "function": "Field convergence or expansion; dynamic energy gate"
-    },
-    "lattice": {
-        "energy": "Stable harmonic network",
-        "function": "Field stabilization or resonance harmonizer"
-    },
-    "triangle": {
-        "energy": "Triadic resonance balance",
-        "function": "Three-phase energetic circuit; balance of polarity"
-    },
-    "square": {
-        "energy": "Grounding / containment field",
-        "function": "Material stabilization and spatial anchoring"
-    },
-    "arrow": {
-        "energy": "Directed force vector",
-        "function": "Intentional projection or energy transmission"
-    },
-    "circle": {
-        "energy": "Closed resonance loop",
-        "function": "Containment, cycling, and self-referential field"
-    },
-    "wave": {
-        "energy": "Oscillatory motion",
-        "function": "Frequency modulation or rhythmic communication"
-    }
+    "spiral": {"energy": "Centripetal / centrifugal flow pattern",
+               "function": "Field convergence or expansion; dynamic energy gate"},
+    "lattice": {"energy": "Stable harmonic network",
+                "function": "Field stabilization or resonance harmonizer"},
+    "triangle": {"energy": "Triadic resonance balance",
+                 "function": "Three-phase energetic circuit; balance of polarity"},
+    "square": {"energy": "Grounding / containment field",
+               "function": "Material stabilization and spatial anchoring"},
+    "arrow": {"energy": "Directed force vector",
+              "function": "Intentional projection or energy transmission"},
+    "circle": {"energy": "Closed resonance loop",
+               "function": "Containment, cycling, and self-referential field"},
+    "wave": {"energy": "Oscillatory motion",
+             "function": "Frequency modulation or rhythmic communication"}
 }
 
+LOG_FILE = "ivc_symbol_log.csv"   # dataset grows here
 
-# ---------------------------------------------------------------------
-# 2. Translator function
-# ---------------------------------------------------------------------
+def log_unclassified(entry: Dict):
+    """Append new or unknown patterns to a CSV dataset."""
+    header = ["timestamp", "shapes", "patterns", "ocr_text", "notes", "pending_label"]
+    new_file = not os.path.exists(LOG_FILE)
+    with open(LOG_FILE, "a", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=header)
+        if new_file:
+            writer.writeheader()
+        writer.writerow(entry)
 
 def ivc_translate(symbol_data: Dict[str, List[str]], ocr_text: str = "") -> str:
-    """
-    Generate a rule-based translation from detected symbol features
-    and OCR-extracted text.
-    """
-
     interpretations = []
-
     shapes = symbol_data.get("shapes", [])
     patterns = symbol_data.get("patterns", [])
     frequencies = symbol_data.get("frequencies", [])
+
+    unclassified_detected = False
 
     # --- interpret geometric forms ---
     for shape in shapes:
@@ -61,45 +47,47 @@ def ivc_translate(symbol_data: Dict[str, List[str]], ocr_text: str = "") -> str:
             interpretations.append(
                 f"**{shape.title()}** → Energy: *{data['energy']}*; Function: *{data['function']}*."
             )
+        else:
+            interpretations.append(f"Unclassified geometric form detected: **{shape}**")
+            unclassified_detected = True
 
-    # --- interpret structural patterns ---
+    # --- interpret patterns ---
     if "triad" in patterns:
-        interpretations.append("Triadic relationship detected — suggests multi-dimensional harmonic balance.")
+        interpretations.append("Triadic relationship detected — multi-dimensional harmonic balance.")
     if "lattice" in patterns:
         interpretations.append("Networked structure indicates collective resonance management.")
     if "spiral-arrow" in patterns:
-        interpretations.append("Spiral-arrow composite — signifies directed vortex generation.")
+        interpretations.append("Spiral-arrow composite — directed vortex generation.")
+    if not any(p in ["triad", "lattice", "spiral-arrow"] for p in patterns):
+        interpretations.append("Unclassified pattern geometry.")
+        unclassified_detected = True
 
-    # --- frequency cues ---
+    # --- frequencies ---
     if frequencies:
         avg_freq = round(sum(frequencies) / len(frequencies), 2)
-        interpretations.append(f"Average resonance frequency: **{avg_freq} Hz** (arbitrary units).")
+        interpretations.append(f"Average resonance frequency: **{avg_freq} Hz** (a.u.)")
 
-    # --- OCR-based hints ---
+    # --- OCR hints ---
     if ocr_text:
         if re.search(r"[0-9]", ocr_text):
-            interpretations.append("Numeric inscriptions suggest quantitative calibration or measurement data.")
+            interpretations.append("Numeric inscriptions suggest calibration or measurement data.")
         elif re.search(r"[A-Za-z]", ocr_text):
-            interpretations.append("Alphabetic characters found — possible linguistic overlay detected.")
+            interpretations.append("Alphabetic overlay detected — possible linguistic encoding.")
         else:
             interpretations.append("Symbolic markings only; no phonetic overlay found.")
     else:
-        interpretations.append("No text detected; analysis based on geometry only.")
+        interpretations.append("No text detected; geometry-based interpretation only.")
 
-    # --- fallback if nothing recognized ---
-    if not interpretations:
-        interpretations.append("Unclassified pattern — add to dataset for future training.")
+    # --- log new data if needed ---
+    if unclassified_detected:
+        log_unclassified({
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
+            "shapes": ",".join(shapes),
+            "patterns": ",".join(patterns),
+            "ocr_text": ocr_text[:200],
+            "notes": "Auto-logged from IVC Analyzer",
+            "pending_label": ""
+        })
+        interpretations.append("🧾 Unclassified elements logged for dataset growth.")
 
     return "\n".join(interpretations)
-
-
-# ---------------------------------------------------------------------
-# 3. Simple demo (optional)
-# ---------------------------------------------------------------------
-if __name__ == "__main__":
-    demo_input = {
-        "shapes": ["spiral", "arrow"],
-        "patterns": ["spiral-arrow", "triad"],
-        "frequencies": [12.3, 14.8, 13.2]
-    }
-    print(ivc_translate(demo_input, ocr_text="AB12"))
