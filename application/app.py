@@ -509,6 +509,10 @@ with tabs[2]:
         else:
             st.info("No sequences available for CFG induction.")
 
+# --- Phase 3 Execution ---
+if "grammar_model" not in locals():
+    st.info("No grammar model found — proceeding with geometric correlation only.")
+
 # ------------------ TAB: Logs ------------------
 with tabs[3]:
     st.header("Logs & Datasets")
