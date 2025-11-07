@@ -1,15 +1,3 @@
-# app.py
-"""
-IVC Symbol Recognizer — Full JSON-Free Version
-Includes:
-- Symbol detection and origin alignment
-- Energy / field overlays
-- Recursive pattern and adjacency detection
-- Translation mapping (runtime)
-- CSV logging
-- Streamlit multi-tab interface
-"""
-
 import os
 from datetime import datetime
 import numpy as np
@@ -32,6 +20,12 @@ os.makedirs(BACKUP_DIR, exist_ok=True)
 
 st.set_page_config(page_title="IVC Symbol Recognizer", layout="wide")
 st.title("IVC Symbol Recognizer — JSON-Free Mode")
+
+# ---------------------------
+# Session-State Initialization
+# ---------------------------
+if "session_symbols" not in st.session_state:
+    st.session_state.session_symbols = []
 
 # ---------------------------
 # CSV Utilities
@@ -141,7 +135,7 @@ tabs = st.tabs(["Upload & Recognize","Symbol Analysis","Logs"])
 with tabs[0]:
     st.header("Upload Images / Scripts")
     uploaded = st.file_uploader("Upload images", type=["png","jpg","tif"], accept_multiple_files=True)
-    session_symbols = []  # runtime session storage
+    session_symbols = st.session_state.session_symbols
     if uploaded:
         for up in uploaded:
             st.subheader(f"File: {up.name}")
@@ -165,7 +159,7 @@ with tabs[0]:
                 desc = descriptor_from_image(crop)
                 label = f"S{i+1}"
                 detected_sequence.append(label)
-                session_symbols.append({"label":label,"descriptor":desc,"crop":crop})
+                st.session_state.session_symbols.append({"label":label,"descriptor":desc,"crop":crop})
                 st.image(cv2.cvtColor(crop,cv2.COLOR_BGR2RGB), width=80)
                 st.write(label)
 
@@ -189,6 +183,7 @@ with tabs[0]:
 # ---------- TAB 2 ----------
 with tabs[1]:
     st.header("Symbol Analysis & Translation")
+    session_symbols = st.session_state.session_symbols
     if not session_symbols:
         st.info("No symbols detected yet. Upload images in Tab 1.")
     else:
@@ -196,7 +191,7 @@ with tabs[1]:
         for sym in session_symbols:
             st.image(cv2.cvtColor(sym["crop"],cv2.COLOR_BGR2RGB), width=60)
             st.write(sym["label"])
-        # Simple adjacency display
+        # Adjacency graph
         seq_labels = [s["label"] for s in session_symbols]
         G = build_fallback_graph(seq_labels)
         st.subheader("Adjacency Graph (Fallback CFG)")
