@@ -7,3 +7,4 @@ opencv-python-headless
 pillow
 pytesseract
 streamlit-drawable-canvas
+tensorflow
