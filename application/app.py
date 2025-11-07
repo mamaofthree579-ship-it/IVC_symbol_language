@@ -112,6 +112,65 @@ def research_framework_tab():
             st.bar_chart(np.bincount(clust["labels"]))
         else:
             st.warning("No clustering results available.")
+# Integration snippet (add to your research_framework_tab after computing 'res')
+from ivc_cfg import sequitur_infer, rules_to_text, rules_to_graph_edges, export_rules_json
+import networkx as nx
+import matplotlib.pyplot as plt
+import tempfile
+import json
+
+st.subheader("Phase II.5 — CFG Induction (Sequitur-style)")
+
+# Gather sequences: you can load real sequences from your corpus. For demo we derive sequences
+# from filenames or from a sequences CSV. Replace this with your real sequence source.
+# Example: use list of filenames (not ideal) OR load from a file 'sequences.json' if exists.
+seq_source = st.text_input("Path to sequences JSON (optional)", value="data/sequences.json")
+sequences = []
+if seq_source and os.path.exists(seq_source):
+    try:
+        with open(seq_source, "r", encoding="utf-8") as f:
+            sequences = json.load(f)
+            st.info(f"Loaded {len(sequences)} sequences from {seq_source}")
+    except Exception as e:
+        st.warning(f"Could not load sequences JSON: {e}")
+
+# fallback demo sequences if none provided
+if not sequences:
+    # try to derive sequences from vectorization names: e.g., filenames with underscore groups,
+    # or use placeholder demonstration
+    sequences = [
+        ["spiral","arrow","dot","spiral","arrow","dot"],
+        ["spiral","dot","spiral","arrow","dot"],
+        ["lattice","dot","lattice","dot"]
+    ]
+    st.info("No real sequences loaded — using demo sequences. Provide a sequences.json for real runs.")
+
+if st.button("🔎 Infer CFG from sequences"):
+    seq_res = sequitur_infer(sequences, min_rule_occurrence=2)
+    st.success("CFG inference finished")
+    st.markdown("### Inferred Rules")
+    if seq_res["rules"]:
+        st.code(rules_to_text(seq_res["rules"]))
+        # allow download
+        tmpf = os.path.join(tempfile.gettempdir(), "ivc_cfg_rules.json")
+        export_rules_json(tmpf, seq_res)
+        with open(tmpf, "r", encoding="utf-8") as fh:
+            st.download_button("Download CFG JSON", data=fh.read(), file_name="ivc_cfg_rules.json", mime="application/json")
+    else:
+        st.info("No robust rules found (increase sequence volume or lower min_rule_occurrence)")
+
+    # Visualize rule graph (if networkx available)
+    edges = rules_to_graph_edges(seq_res["rules"])
+    if edges:
+        try:
+            G = nx.DiGraph()
+            G.add_edges_from(edges)
+            fig, ax = plt.subplots(figsize=(6,4))
+            pos = nx.spring_layout(G, k=0.5, iterations=40)
+            nx.draw(G, pos, with_labels=True, node_size=600, font_size=8, arrows=True, ax=ax)
+            st.pyplot(fig)
+        except Exception as e:
+            st.warning(f"Graph visualization failed: {e}")
 
         # ───── Display Phase IV (placeholder)
         st.subheader("**Phase IV – Harmonic Resonance Mapping**")
