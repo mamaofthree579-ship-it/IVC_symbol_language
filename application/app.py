@@ -1,6 +1,6 @@
 # app.py
 """
-IVC Symbol Recognizer — Full Version with Robust JSON & Multi-Tab Support
+IVC Symbol Recognizer — Full Version with Robust JSON & CSV
 Features:
 - Symbol recognition with fallback CFG adjacency graph
 - Energy / field overlay visualization
@@ -73,6 +73,35 @@ def save_json(path: str, obj: Any):
 # Ensure library exists
 if not os.path.exists(SYMBOL_LIB_FILE):
     save_json(SYMBOL_LIB_FILE, {})
+
+# ---------------------------
+# CSV Utilities
+# ---------------------------
+def safe_load_csv(path: str) -> pd.DataFrame:
+    if not os.path.exists(path):
+        return pd.DataFrame()
+    try:
+        return pd.read_csv(path)
+    except pd.errors.EmptyDataError:
+        return pd.DataFrame()
+    except pd.errors.ParserError:
+        st.warning(f"CSV {path} is malformed, skipping.")
+        return pd.DataFrame()
+    except Exception as e:
+        st.warning(f"Unexpected CSV load error: {e}")
+        return pd.DataFrame()
+
+def append_csv_row(filepath: str, row: dict):
+    import csv
+    new_file = not os.path.exists(filepath)
+    try:
+        with open(filepath, "a", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=list(row.keys()))
+            if new_file:
+                writer.writeheader()
+            writer.writerow(row)
+    except Exception as e:
+        st.error(f"Failed to write {filepath}: {e}")
 
 # ---------------------------
 # Symbol Descriptor Utilities
@@ -154,7 +183,7 @@ SYMBOL_LIBRARY = load_symbol_library(SYMBOL_LIB_FILE, SYMBOLS_DIR)
 # ---------------------------
 # Matching Helper
 # ---------------------------
-def match_descriptor(desc: np.ndarray, library: dict, top_k:int=3) -> List[Tuple[str,float]]:
+def match_descriptor(desc: np.ndarray, library: dict, top_k:int=3) -> list:
     entries = []
     for key, v in library.items():
         d = v.get("desc")
@@ -168,7 +197,7 @@ def match_descriptor(desc: np.ndarray, library: dict, top_k:int=3) -> List[Tuple
 # ---------------------------
 # CFG fallback
 # ---------------------------
-def build_fallback_grammar(symbol_data: List[str]):
+def build_fallback_grammar(symbol_data: list):
     """Adjacency graph fallback if CFG fails"""
     G = nx.DiGraph()
     for i,sym in enumerate(symbol_data[:-1]):
@@ -256,28 +285,26 @@ with tabs[0]:
                 "recognized_sequence": ",".join(detected_sequence)[:500],
                 "fallback_used": fallback_mode
             }
-            # log CSV
-            import csv
-            new_file = not os.path.exists(LOG_FILE)
-            with open(LOG_FILE,"a",newline="",encoding="utf-8") as f:
-                writer = csv.DictWriter(f, fieldnames=log_row.keys())
-                if new_file: writer.writeheader()
-                writer.writerow(log_row)
+            append_csv_row(LOG_FILE, log_row)
 
 # ---------- TAB 2 ----------
 with tabs[1]:
     st.header("Symbol Library Editor")
     SYMBOL_LIBRARY = load_symbol_library(SYMBOL_LIB_FILE, SYMBOLS_DIR)
-    st.write("Existing symbols in library:")
-    for k,v in SYMBOL_LIBRARY.items():
-        st.image(cv2.imread(v["image_path"]), width=50)
-        st.write(k, v["info"].get("display_name",""))
+    if SYMBOL_LIBRARY:
+        st.write("Existing symbols in library:")
+        for k,v in SYMBOL_LIBRARY.items():
+            if os.path.exists(v["image_path"]):
+                st.image(cv2.imread(v["image_path"]), width=50)
+            st.write(k, v["info"].get("display_name",""))
+    else:
+        st.info("Library is empty. Add symbols via the Upload tab.")
 
 # ---------- TAB 3 ----------
 with tabs[2]:
     st.header("Logs")
-    if os.path.exists(LOG_FILE):
-        df = pd.read_csv(LOG_FILE)
-        st.dataframe(df)
+    df = safe_load_csv(LOG_FILE)
+    if df.empty:
+        st.info("No logs yet or CSV is empty/malformed.")
     else:
-        st.info("No logs yet.")
+        st.dataframe(df)
