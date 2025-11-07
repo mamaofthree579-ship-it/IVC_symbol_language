@@ -1,0 +1,9 @@
+[
+  {
+    "phase": "I",
+    "title": "Data Normalization and Symbol Abstraction",
+    "algorithm": "normalize_and_vectorize",
+    "output": ["vector_dataset", "adjacency_graph"]
+  },
+  ...
+]
