@@ -1,25 +1,22 @@
 # app.py
 """
-IVC Symbol Recognizer — Full Version with Robust JSON & CSV
+IVC Symbol Recognizer — JSON-Free Version
 Features:
-- Symbol recognition with fallback CFG adjacency graph
+- Symbol recognition from uploaded images
 - Energy / field overlay visualization
-- Library editor and logging
-- Multi-tab support
+- CSV logging
+- Fallback CFG adjacency graph
+- Multi-tab Streamlit interface
 """
 
 import os
-import json
 from datetime import datetime
-from typing import List, Dict, Any, Tuple
-
 import numpy as np
 import cv2
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import networkx as nx
-from PIL import Image
 
 # ---------------------------
 # Paths & Config
@@ -28,51 +25,12 @@ BASE_DIR = os.getcwd()
 APP_DIR = os.path.join(BASE_DIR, "application")
 os.makedirs(APP_DIR, exist_ok=True)
 
-SYMBOL_LIB_FILE = os.path.join(APP_DIR, "ivc_symbol_library.json")
-SYMBOLS_DIR = os.path.join(APP_DIR, "symbols")
-os.makedirs(SYMBOLS_DIR, exist_ok=True)
-
 LOG_FILE = os.path.join(APP_DIR, "ivc_symbol_log.csv")
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 os.makedirs(BACKUP_DIR, exist_ok=True)
 
 st.set_page_config(page_title="IVC Symbol Recognizer", layout="wide")
-st.title("IVC Symbol Recognizer — Multi-Tab Version")
-
-# ---------------------------
-# JSON Utilities
-# ---------------------------
-def backup_file(path: str):
-    if os.path.exists(path):
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        import shutil
-        shutil.copy(path, os.path.join(BACKUP_DIR, f"{ts}_{os.path.basename(path)}"))
-
-def safe_load_json(path: str) -> dict:
-    """Load JSON safely; returns empty dict if invalid."""
-    if not os.path.exists(path):
-        return {}
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except json.JSONDecodeError:
-        st.warning(f"JSON decode error in {path}, returning empty dict.")
-        return {}
-    except Exception as e:
-        st.warning(f"Failed to read JSON {path}: {e}")
-        return {}
-
-def save_json(path: str, obj: Any):
-    backup_file(path)
-    try:
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(obj, f, indent=2)
-    except Exception as e:
-        st.error(f"Failed to save JSON {path}: {e}")
-
-# Ensure library exists
-if not os.path.exists(SYMBOL_LIB_FILE):
-    save_json(SYMBOL_LIB_FILE, {})
+st.title("IVC Symbol Recognizer — JSON-Free Mode")
 
 # ---------------------------
 # CSV Utilities
@@ -82,13 +40,7 @@ def safe_load_csv(path: str) -> pd.DataFrame:
         return pd.DataFrame()
     try:
         return pd.read_csv(path)
-    except pd.errors.EmptyDataError:
-        return pd.DataFrame()
-    except pd.errors.ParserError:
-        st.warning(f"CSV {path} is malformed, skipping.")
-        return pd.DataFrame()
-    except Exception as e:
-        st.warning(f"Unexpected CSV load error: {e}")
+    except:
         return pd.DataFrame()
 
 def append_csv_row(filepath: str, row: dict):
@@ -101,51 +53,21 @@ def append_csv_row(filepath: str, row: dict):
                 writer.writeheader()
             writer.writerow(row)
     except Exception as e:
-        st.error(f"Failed to write {filepath}: {e}")
+        st.error(f"Failed to write CSV log: {e}")
 
 # ---------------------------
-# Symbol Descriptor Utilities
+# Descriptor Utilities
 # ---------------------------
-def hu_moments_descriptor(gray: np.ndarray) -> np.ndarray:
-    blur = cv2.GaussianBlur(gray, (5,5), 0)
-    _, thr = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+def hu_moments_descriptor(gray):
+    blur = cv2.GaussianBlur(gray, (5,5),0)
+    _, thr = cv2.threshold(blur,0,255,cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     M = cv2.moments(thr)
     hu = cv2.HuMoments(M).flatten()
     hu = [-np.sign(h)*np.log10(abs(h)+1e-30) if h!=0 else 0.0 for h in hu]
-    return np.nan_to_num(np.array(hu, dtype=np.float32))
+    return np.nan_to_num(np.array(hu,dtype=np.float32))
 
-def contour_signature_descriptor(contour: np.ndarray, length: int = 64) -> np.ndarray:
-    if contour is None or len(contour) < 6:
-        return np.zeros(length//2, dtype=np.float32)
-    pts = contour.reshape(-1,2).astype(np.float32)
-    diffs = np.linalg.norm(pts[1:] - pts[:-1], axis=1)
-    cum = np.concatenate([[0], np.cumsum(diffs)])
-    if cum[-1] == 0:
-        res = np.tile(pts[0], (length,1))
-    else:
-        samp = np.linspace(0, cum[-1], length)
-        res = np.zeros((length,2), dtype=np.float32)
-        idx = 0
-        for i,s in enumerate(samp):
-            while idx < len(cum)-1 and cum[idx+1] < s:
-                idx += 1
-            if idx == len(cum)-1:
-                res[i] = pts[-1]
-            else:
-                t = (s - cum[idx]) / (cum[idx+1] - cum[idx] + 1e-12)
-                res[i] = pts[idx]*(1-t) + pts[idx+1]*t
-    vecs = res[1:] - res[:-1]
-    norms = np.linalg.norm(vecs, axis=1, keepdims=True)+1e-9
-    vn = vecs/norms
-    dots = (vn[:-1]*vn[1:]).sum(axis=1)
-    dots = np.clip(dots,-1.0,1.0)
-    angles = np.arccos(dots)
-    bins = np.array_split(angles, length//2)
-    feats = np.array([b.mean() if len(b)>0 else 0.0 for b in bins], dtype=np.float32)
-    return feats
-
-def descriptor_from_image(img_bgr: np.ndarray) -> np.ndarray:
-    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY) if img_bgr.ndim==3 else img_bgr
+def descriptor_from_image(img):
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     hu = hu_moments_descriptor(gray)
     blur = cv2.GaussianBlur(gray, (5,5),0)
     edges = cv2.Canny(blur,50,200)
@@ -154,61 +76,33 @@ def descriptor_from_image(img_bgr: np.ndarray) -> np.ndarray:
         sig = np.zeros(32, dtype=np.float32)
     else:
         main = max(cnts,key=cv2.contourArea)
-        sig = contour_signature_descriptor(main,64)
+        pts = main.reshape(-1,2).astype(np.float32)
+        vecs = pts[1:]-pts[:-1]
+        norms = np.linalg.norm(vecs,axis=1,keepdims=True)+1e-9
+        vn = vecs/norms
+        dots = (vn[:-1]*vn[1:]).sum(axis=1)
+        dots = np.clip(dots,-1,1)
+        angles = np.arccos(dots)
+        bins = np.array_split(angles,16)
+        sig = np.array([b.mean() if len(b)>0 else 0.0 for b in bins],dtype=np.float32)
     desc = np.concatenate([hu,sig])
     norm = np.linalg.norm(desc)+1e-9
     return (desc/norm).astype(np.float32)
 
 # ---------------------------
-# Load Symbol Library
+# Fallback CFG / adjacency
 # ---------------------------
-def load_symbol_library(lib_path: str, symbols_dir: str) -> dict:
-    lib = safe_load_json(lib_path)
-    descriptors = {}
-    for key, info in lib.items():
-        ipath = info.get("image_path") or os.path.join(symbols_dir, f"{key}.png")
-        if os.path.exists(ipath):
-            try:
-                img = cv2.imread(ipath)
-                desc = descriptor_from_image(img)
-                descriptors[key] = {"info":info,"desc":desc,"image_path":ipath}
-            except Exception as e:
-                st.warning(f"Descriptor build failed for {key}: {e}")
-        else:
-            descriptors[key] = {"info":info,"desc":None,"image_path":ipath}
-    return descriptors
-
-SYMBOL_LIBRARY = load_symbol_library(SYMBOL_LIB_FILE, SYMBOLS_DIR)
-
-# ---------------------------
-# Matching Helper
-# ---------------------------
-def match_descriptor(desc: np.ndarray, library: dict, top_k:int=3) -> list:
-    entries = []
-    for key, v in library.items():
-        d = v.get("desc")
-        if d is None:
-            continue
-        dist = 1.0 - np.clip(np.dot(desc,d)/(np.linalg.norm(desc)*np.linalg.norm(d)+1e-12),-1.0,1.0)
-        entries.append((key,float(dist)))
-    entries.sort(key=lambda x:x[1])
-    return entries[:top_k]
-
-# ---------------------------
-# CFG fallback
-# ---------------------------
-def build_fallback_grammar(symbol_data: list):
-    """Adjacency graph fallback if CFG fails"""
+def build_fallback_grammar(symbol_sequence):
     G = nx.DiGraph()
-    for i,sym in enumerate(symbol_data[:-1]):
-        G.add_edge(sym, symbol_data[i+1])
+    for i,sym in enumerate(symbol_sequence[:-1]):
+        G.add_edge(sym, symbol_sequence[i+1])
     return G
 
 # ---------------------------
 # Energy overlay
 # ---------------------------
-def field_flow_overlay(img_bgr: np.ndarray):
-    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+def field_flow_overlay(img):
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     gx = cv2.Sobel(gray, cv2.CV_32F,1,0,ksize=5)
     gy = cv2.Sobel(gray, cv2.CV_32F,0,1,ksize=5)
     mag, ang = cv2.cartToPolar(gx,gy,angleInDegrees=True)
@@ -222,11 +116,11 @@ def field_flow_overlay(img_bgr: np.ndarray):
     edges = cv2.Canny(gray,80,200)
     mask = cv2.dilate(edges,np.ones((3,3),np.uint8),iterations=1)
     lines = cv2.bitwise_and(flow_col,flow_col,mask=mask)
-    overlay = cv2.addWeighted(img_bgr,0.65,lines,0.9,0)
+    overlay = cv2.addWeighted(img,0.65,lines,0.9,0)
     overlay = cv2.bilateralFilter(overlay,7,75,75)
     return overlay, edges
 
-def plot_energy_inferno(edges: np.ndarray):
+def plot_energy_inferno(edges):
     fig, ax = plt.subplots(figsize=(5,5))
     ax.imshow(edges,cmap="inferno")
     ax.axis("off")
@@ -235,7 +129,7 @@ def plot_energy_inferno(edges: np.ndarray):
 # ---------------------------
 # Tabs UI
 # ---------------------------
-tabs = st.tabs(["Upload & Recognize","Library Editor","Logs"])
+tabs = st.tabs(["Upload & Recognize","Logs"])
 
 # ---------- TAB 1 ----------
 with tabs[0]:
@@ -249,11 +143,11 @@ with tabs[0]:
             if img is None:
                 st.error("Failed to decode image")
                 continue
+
             overlay, edges = field_flow_overlay(img)
             st.image(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB), use_column_width=True)
             st.pyplot(plot_energy_inferno(edges))
 
-            # Contours
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             cnts,_ = cv2.findContours(cv2.Canny(gray,60,180),cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
             detected_sequence = []
@@ -263,21 +157,17 @@ with tabs[0]:
                 if w*h < 100: continue
                 crop = img[y:y+h, x:x+w].copy()
                 desc = descriptor_from_image(crop)
-                matches = match_descriptor(desc,SYMBOL_LIBRARY)
-                label=""
-                if matches:
-                    best, dist = matches[0]
-                    if dist<=0.18:
-                        label=best
-                        detected_sequence.append(label)
+                label = f"S{i+1}"  # runtime label
+                detected_sequence.append(label)
                 st.image(cv2.cvtColor(crop,cv2.COLOR_BGR2RGB), width=80)
-                st.write(label if label else "Unrecognized")
+                st.write(label)
+
             st.write("Detected sequence:", detected_sequence)
             if not detected_sequence:
-                st.info("No symbols matched; proceeding with heuristic graph")
                 fallback_mode=True
-                grammar_model=build_fallback_grammar([f"S{i+1}" for i in range(len(cnts))])
+                grammar_model = build_fallback_grammar([f"S{i+1}" for i in range(len(cnts))])
 
+            # Log
             log_row = {
                 "timestamp": datetime.now().isoformat(),
                 "file": up.name,
@@ -289,19 +179,6 @@ with tabs[0]:
 
 # ---------- TAB 2 ----------
 with tabs[1]:
-    st.header("Symbol Library Editor")
-    SYMBOL_LIBRARY = load_symbol_library(SYMBOL_LIB_FILE, SYMBOLS_DIR)
-    if SYMBOL_LIBRARY:
-        st.write("Existing symbols in library:")
-        for k,v in SYMBOL_LIBRARY.items():
-            if os.path.exists(v["image_path"]):
-                st.image(cv2.imread(v["image_path"]), width=50)
-            st.write(k, v["info"].get("display_name",""))
-    else:
-        st.info("Library is empty. Add symbols via the Upload tab.")
-
-# ---------- TAB 3 ----------
-with tabs[2]:
     st.header("Logs")
     df = safe_load_csv(LOG_FILE)
     if df.empty:
