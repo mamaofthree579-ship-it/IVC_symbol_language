@@ -29,6 +29,147 @@ try:
 except Exception:
     TF_AVAILABLE = False
 
+import streamlit as st
+from ivc_framework import (
+    run_full_pipeline_on_folder,
+    plot_fractal_boxcount,
+    plot_radial_signature,
+    plot_adjacency_graph,
+)
+import os
+import numpy as np
+import tempfile
+import json
+
+# ───────────────────────────────────────────────
+# 🧠 Research Framework Tab
+# ───────────────────────────────────────────────
+def research_framework_tab():
+    st.title("📚 Indus Script Research Framework")
+
+    st.markdown("""
+    ### Overview
+    This module implements Phases I–VIII of the IVC Symbol Analysis Framework.
+    Upload or select a folder of glyph images, then run the full analysis pipeline.
+    """)
+
+    # --- Folder input
+    st.markdown("#### Step 1: Select or upload glyph folder")
+    glyph_folder = st.text_input(
+        "Enter path to glyph image folder:",
+        value="data/glyphs",
+        help="Folder containing .png, .jpg, or .tif images of symbols",
+    )
+
+    uploaded_files = st.file_uploader(
+        "Or upload one or more glyph images", type=["png", "jpg", "jpeg", "tif"], accept_multiple_files=True
+    )
+
+    # Save uploaded images to temp dir
+    tmp_dir = None
+    if uploaded_files:
+        tmp_dir = tempfile.mkdtemp()
+        for file in uploaded_files:
+            with open(os.path.join(tmp_dir, file.name), "wb") as f:
+                f.write(file.getbuffer())
+        glyph_folder = tmp_dir
+        st.success(f"Uploaded {len(uploaded_files)} files → using temp folder {tmp_dir}")
+
+    # --- Run analysis
+    if st.button("🚀 Run Full Research Pipeline"):
+        if not os.path.exists(glyph_folder):
+            st.error(f"Folder not found: {glyph_folder}")
+            return
+
+        with st.spinner("Running multi-phase analysis... please wait"):
+            res = run_full_pipeline_on_folder(glyph_folder, n_clusters=6)
+
+        st.success("✅ Analysis complete!")
+
+        # ───── Display Phase I outputs
+        st.subheader("**Phase I – Vectorization & Normalization**")
+        st.write(f"Processed {len(res['vector_results']['vectors'])} glyphs.")
+        st.json(
+            {k: {"centroid": v.get("centroid"), "signature_len": len(v["signature_vector"])}
+             for k, v in list(res["vector_results"]["vectors"].items())[:5]}
+        )
+
+        # ───── Display Phase II outputs
+        st.subheader("**Phase II – Fractal / Recursive Structure**")
+        for i, (p, info) in enumerate(list(res["fractal_dims"].items())[:3]):
+            st.write(f"Glyph: `{os.path.basename(p)}` → Fractal D = {info['D']:.3f}")
+            if st.checkbox(f"Show box-count plot for {os.path.basename(p)}", key=f"frc{i}"):
+                sizes = np.array(info["sizes"])
+                counts = np.array(info["counts"])
+                plot_fractal_boxcount(sizes, counts)
+
+        # ───── Display Phase III outputs
+        st.subheader("**Phase III – Clustering & Semantic Fields**")
+        clust = res.get("clusters", {})
+        if "labels" in clust and len(clust["labels"]) > 0:
+            unique_labels = np.unique(clust["labels"])
+            st.write(f"Found {len(unique_labels)} clusters.")
+            st.bar_chart(np.bincount(clust["labels"]))
+        else:
+            st.warning("No clustering results available.")
+
+        # ───── Display Phase IV (placeholder)
+        st.subheader("**Phase IV – Harmonic Resonance Mapping**")
+        st.markdown("You can run individual glyph FFT harmonic analysis below:")
+        files = list(res["vector_results"]["vectors"].keys())
+        if files:
+            selected = st.selectbox("Choose glyph for harmonic analysis", files)
+            from ivc_framework import radial_signature_fft
+            img = res["vector_results"]["vectors"][selected]["edges"]
+            fft_res = radial_signature_fft(img)
+            if len(fft_res["fft_freqs"]) > 0:
+                plot_radial_signature(
+                    fft_res["angles"], fft_res["radii"], fft_res["fft_freqs"], fft_res["fft_mag"]
+                )
+                st.json(fft_res["dominant"])
+
+        # ───── Save summary file
+        out_summary = {
+            "timestamp": str(os.path.getmtime(glyph_folder)),
+            "num_glyphs": len(res["vector_results"]["vectors"]),
+            "num_clusters": int(len(res.get("clusters", {}).get("labels", []))),
+            "avg_fractal_D": float(np.mean([v["D"] for v in res["fractal_dims"].values()] or [0])),
+        }
+        tmp_json = os.path.join(tempfile.gettempdir(), "ivc_summary.json")
+        with open(tmp_json, "w") as f:
+            json.dump(out_summary, f, indent=2)
+
+        st.download_button(
+            "📥 Download summary JSON",
+            data=json.dumps(out_summary, indent=2),
+            file_name="ivc_summary.json",
+            mime="application/json",
+        )
+
+    else:
+        st.info("Select or upload images, then click **Run Full Research Pipeline** to begin.")
+
+
+# ───────────────────────────────────────────────
+# Integrate into your main tab layout
+# ───────────────────────────────────────────────
+def main():
+    tabs = ["Catalog", "Drawing", "Research Framework"]
+    choice = st.sidebar.radio("Navigation", tabs)
+
+    if choice == "Research Framework":
+        research_framework_tab()
+    elif choice == "Catalog":
+        st.write("🗂 Catalog view placeholder")
+    elif choice == "Drawing":
+        st.write("✏️ Drawing tools placeholder")
+    else:
+        st.write("Welcome to the Indus Research Application!")
+
+
+if __name__ == "__main__":
+    main()
+
 # -----------------------
 # Config & files
 # -----------------------
