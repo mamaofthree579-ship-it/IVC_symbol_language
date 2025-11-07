@@ -1,12 +1,13 @@
 # app.py
 """
-IVC Symbol Recognizer — JSON-Free Version
-Features:
-- Symbol recognition from uploaded images
-- Energy / field overlay visualization
+IVC Symbol Recognizer — Full JSON-Free Version
+Includes:
+- Symbol detection and origin alignment
+- Energy / field overlays
+- Recursive pattern and adjacency detection
+- Translation mapping (runtime)
 - CSV logging
-- Fallback CFG adjacency graph
-- Multi-tab Streamlit interface
+- Streamlit multi-tab interface
 """
 
 import os
@@ -19,7 +20,7 @@ import matplotlib.pyplot as plt
 import networkx as nx
 
 # ---------------------------
-# Paths & Config
+# Config
 # ---------------------------
 BASE_DIR = os.getcwd()
 APP_DIR = os.path.join(BASE_DIR, "application")
@@ -66,25 +67,30 @@ def hu_moments_descriptor(gray):
     hu = [-np.sign(h)*np.log10(abs(h)+1e-30) if h!=0 else 0.0 for h in hu]
     return np.nan_to_num(np.array(hu,dtype=np.float32))
 
+def contour_signature_descriptor(contour, length=32):
+    pts = contour.reshape(-1,2).astype(np.float32)
+    if len(pts)<2: return np.zeros(length, dtype=np.float32)
+    diffs = pts[1:]-pts[:-1]
+    norms = np.linalg.norm(diffs,axis=1,keepdims=True)+1e-9
+    vn = diffs/norms
+    dots = (vn[:-1]*vn[1:]).sum(axis=1)
+    dots = np.clip(dots,-1,1)
+    angles = np.arccos(dots)
+    bins = np.array_split(angles,length)
+    feats = np.array([b.mean() if len(b)>0 else 0.0 for b in bins],dtype=np.float32)
+    return feats
+
 def descriptor_from_image(img):
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     hu = hu_moments_descriptor(gray)
-    blur = cv2.GaussianBlur(gray, (5,5),0)
+    blur = cv2.GaussianBlur(gray,(5,5),0)
     edges = cv2.Canny(blur,50,200)
     cnts,_ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
     if not cnts:
         sig = np.zeros(32, dtype=np.float32)
     else:
         main = max(cnts,key=cv2.contourArea)
-        pts = main.reshape(-1,2).astype(np.float32)
-        vecs = pts[1:]-pts[:-1]
-        norms = np.linalg.norm(vecs,axis=1,keepdims=True)+1e-9
-        vn = vecs/norms
-        dots = (vn[:-1]*vn[1:]).sum(axis=1)
-        dots = np.clip(dots,-1,1)
-        angles = np.arccos(dots)
-        bins = np.array_split(angles,16)
-        sig = np.array([b.mean() if len(b)>0 else 0.0 for b in bins],dtype=np.float32)
+        sig = contour_signature_descriptor(main,32)
     desc = np.concatenate([hu,sig])
     norm = np.linalg.norm(desc)+1e-9
     return (desc/norm).astype(np.float32)
@@ -92,7 +98,7 @@ def descriptor_from_image(img):
 # ---------------------------
 # Fallback CFG / adjacency
 # ---------------------------
-def build_fallback_grammar(symbol_sequence):
+def build_fallback_graph(symbol_sequence):
     G = nx.DiGraph()
     for i,sym in enumerate(symbol_sequence[:-1]):
         G.add_edge(sym, symbol_sequence[i+1])
@@ -127,14 +133,15 @@ def plot_energy_inferno(edges):
     return fig
 
 # ---------------------------
-# Tabs UI
+# Streamlit Tabs
 # ---------------------------
-tabs = st.tabs(["Upload & Recognize","Logs"])
+tabs = st.tabs(["Upload & Recognize","Symbol Analysis","Logs"])
 
 # ---------- TAB 1 ----------
 with tabs[0]:
-    st.header("Upload images for recognition")
+    st.header("Upload Images / Scripts")
     uploaded = st.file_uploader("Upload images", type=["png","jpg","tif"], accept_multiple_files=True)
+    session_symbols = []  # runtime session storage
     if uploaded:
         for up in uploaded:
             st.subheader(f"File: {up.name}")
@@ -151,23 +158,25 @@ with tabs[0]:
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             cnts,_ = cv2.findContours(cv2.Canny(gray,60,180),cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
             detected_sequence = []
-            fallback_mode = False
             for i,c in enumerate(cnts[:20]):
                 x,y,w,h = cv2.boundingRect(c)
                 if w*h < 100: continue
                 crop = img[y:y+h, x:x+w].copy()
                 desc = descriptor_from_image(crop)
-                label = f"S{i+1}"  # runtime label
+                label = f"S{i+1}"
                 detected_sequence.append(label)
+                session_symbols.append({"label":label,"descriptor":desc,"crop":crop})
                 st.image(cv2.cvtColor(crop,cv2.COLOR_BGR2RGB), width=80)
                 st.write(label)
 
             st.write("Detected sequence:", detected_sequence)
+            fallback_mode = False
             if not detected_sequence:
                 fallback_mode=True
-                grammar_model = build_fallback_grammar([f"S{i+1}" for i in range(len(cnts))])
+                fallback_graph = build_fallback_graph([f"S{i+1}" for i in range(len(cnts))])
+                st.write("Fallback adjacency graph built.")
 
-            # Log
+            # Log CSV
             log_row = {
                 "timestamp": datetime.now().isoformat(),
                 "file": up.name,
@@ -179,9 +188,29 @@ with tabs[0]:
 
 # ---------- TAB 2 ----------
 with tabs[1]:
+    st.header("Symbol Analysis & Translation")
+    if not session_symbols:
+        st.info("No symbols detected yet. Upload images in Tab 1.")
+    else:
+        st.subheader("Detected Symbols")
+        for sym in session_symbols:
+            st.image(cv2.cvtColor(sym["crop"],cv2.COLOR_BGR2RGB), width=60)
+            st.write(sym["label"])
+        # Simple adjacency display
+        seq_labels = [s["label"] for s in session_symbols]
+        G = build_fallback_graph(seq_labels)
+        st.subheader("Adjacency Graph (Fallback CFG)")
+        pos = nx.spring_layout(G)
+        plt.figure(figsize=(5,5))
+        nx.draw(G,pos,with_labels=True,node_color='lightblue',node_size=700,edge_color='gray')
+        st.pyplot(plt.gcf())
+        plt.clf()
+
+# ---------- TAB 3 ----------
+with tabs[2]:
     st.header("Logs")
     df = safe_load_csv(LOG_FILE)
     if df.empty:
-        st.info("No logs yet or CSV is empty/malformed.")
+        st.info("No logs yet.")
     else:
         st.dataframe(df)
